@@ -1,0 +1,10 @@
+import { SlashCommandSubcommandBuilder } from 'discord.js';
+import type { MusicContext } from './context.js';
+
+export const definition = new SlashCommandSubcommandBuilder().setName('saltar').setDescription('Avanza a la siguiente canción');
+
+export async function execute({ i, service, state, authorize }: MusicContext) {
+  const value = undefined;
+  await service.control(i.guild!.id, 'skip', state.version, authorize, value);
+  return 'Reproductor actualizado. Consulta /musica cola o el dashboard.';
+}
