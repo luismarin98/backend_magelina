@@ -16,6 +16,8 @@ export function startupErrorMessage(stage: StartupStage, cause: unknown): string
   if (stage === 'configuration' && cause instanceof ConfigError) detail = cause.message;
   else if (typeof cause === 'object' && cause !== null && 'code' in cause) {
     if (stage === 'http' && cause.code === 'EADDRINUSE') detail = 'El puerto configurado ya esta ocupado. Cierra el otro proceso o cambia PORT.';
+    if (stage === 'http' && cause.code === 'EACCES') detail = 'El proceso no tiene permiso para abrir el puerto configurado.';
+    if (stage === 'http' && cause.code === 'EADDRNOTAVAIL') detail = 'La interfaz de red solicitada no esta disponible para abrir el servidor HTTP.';
     if (stage === 'mongodb' && cause.code === 18) detail = 'MongoDB rechazo la autenticacion. Revisa las credenciales de MONGODB_URI.';
     if (stage === 'mongodb' && ['ENOTFOUND', 'EAI_AGAIN', 'ENODATA', 'ESERVFAIL'].includes(String(cause.code))) detail = 'No se pudo resolver el destino de MongoDB. Comprueba el hostname y la configuracion DNS.';
     if (stage === 'mongodb' && cause.code === 'ECONNREFUSED') detail = 'La conexion a MongoDB fue rechazada. Comprueba el destino, el puerto y el acceso de red.';

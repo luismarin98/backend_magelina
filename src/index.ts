@@ -32,7 +32,7 @@ async function shutdown(exitCode = 0) {
 
   const deadline = setTimeout(() => process.exit(1), 10000);
   try {
-    if (server) {
+    if (server?.listening) {
       await new Promise<void>((resolve, reject) => {
         server!.close((error) => error ? reject(error) : resolve());
         server!.closeIdleConnections();
@@ -72,7 +72,7 @@ try {
     startupStage = 'http';
     const app = createApp({ config, bot, isStopping: () => stopping });
     await new Promise<void>((resolve, reject) => {
-      server = app.listen(config.port, (error?: Error) => error ? reject(error) : resolve());
+      server = app.listen(config.port, '0.0.0.0', () => resolve());
       server.once('error', reject);
     });
     server!.on('error', () => {
