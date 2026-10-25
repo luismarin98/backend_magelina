@@ -19,6 +19,8 @@ test('los errores externos no filtran secretos, URIs ni stacks', () => {
     assert.ok(!message.includes('example.invalid'));
   }
   assert.match(startupErrorMessage('http', { code: 'EADDRINUSE' }), /puerto.*ocupado/);
+  assert.match(startupErrorMessage('http', { code: 'EAFNOSUPPORT', message: 'detalle-privado' }), /codigo del sistema: EAFNOSUPPORT/);
+  assert.ok(!startupErrorMessage('http', { code: 'EAFNOSUPPORT', message: 'detalle-privado' }).includes('detalle-privado'));
   assert.match(startupErrorMessage('indexes', { code: 11000 }), /duplicados/);
 });
 
