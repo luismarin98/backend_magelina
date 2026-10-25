@@ -12,8 +12,11 @@ El arranque valida la configuraciÃ³n, conecta MongoDB, inicia Discord y abre E
 
 ## Endpoints pÃºblicos
 
+- `GET /`: pagina de estado para confirmar visualmente el despliegue y consultar la disponibilidad de API, MongoDB y Discord.
 - `GET /api/health`: confirma que el servidor HTTP responde.
 - `GET /api/ready`: devuelve 200 cuando MongoDB y Discord estÃ¡n disponibles; 503 en caso contrario.
+
+Al desplegar en Render, abre la URL publica del servicio para ver la pagina de estado. Puedes configurar `/api/health` como ruta de Health Check en Render.
 
 CORS permite el origen configurado de la dashboard. CORS no es autenticacion. Las consultas de servidores estan protegidas mediante sesion y comprobacion de permisos; aun no se exponen operaciones para modificarlos.
 

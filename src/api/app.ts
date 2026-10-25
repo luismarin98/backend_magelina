@@ -21,6 +21,82 @@ export function createApp({ config, bot, isStopping }: AppDependencies) {
   app.use(cors({ origin: config.dashboardOrigin, credentials: true }));
   app.use(express.json({ limit: '32kb' }));
 
+  app.get('/', (_req, res) => {
+    res.type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <title>Backend Magelina | Estado del servicio</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #101827; color: #e5edf7; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at 50% 0%, #233554 0, #101827 58%); }
+    main { width: min(100%, 620px); padding: clamp(28px, 7vw, 52px); border: 1px solid #34445b; border-radius: 24px; background: rgb(21 32 49 / 92%); box-shadow: 0 24px 80px rgb(0 0 0 / 28%); }
+    .eyebrow { margin: 0 0 20px; color: #9bb4d2; font-size: .78rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(2rem, 8vw, 3.4rem); line-height: 1.08; letter-spacing: -.045em; }
+    .intro { margin: 18px 0 30px; color: #b8c6d8; font-size: 1.05rem; line-height: 1.7; }
+    .status { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid #34445b; border-radius: 14px; background: #111c2b; }
+    .indicator { width: 11px; height: 11px; flex: 0 0 auto; border-radius: 50%; background: #fbbf24; box-shadow: 0 0 16px currentColor; color: #fbbf24; }
+    .indicator.ready { background: #4ade80; color: #4ade80; }
+    .indicator.unavailable { background: #fb7185; color: #fb7185; }
+    #status-title { margin: 0; font-size: 1rem; font-weight: 700; }
+    #status-detail { margin: 4px 0 0; color: #9aabc0; font-size: .9rem; line-height: 1.5; }
+    .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+    .links a { padding: 11px 15px; border: 1px solid #435570; border-radius: 10px; color: #d9e8fa; font-size: .9rem; font-weight: 650; text-decoration: none; transition: background .15s ease, border-color .15s ease; }
+    .links a:hover, .links a:focus-visible { border-color: #7da7df; background: #233554; }
+    footer { margin-top: 30px; color: #8293a9; font-size: .82rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Backend Magelina</p>
+    <h1>Proyecto desplegado</h1>
+    <p class="intro">El servicio web está publicado y responde correctamente. Aquí puedes consultar en tiempo real la disponibilidad de sus servicios.</p>
+    <section class="status" aria-live="polite" aria-atomic="true">
+      <span id="indicator" class="indicator"></span>
+      <div>
+        <p id="status-title">Verificando servicios…</p>
+        <p id="status-detail">Consultando el estado de la API.</p>
+      </div>
+    </section>
+    <nav class="links" aria-label="Estado del servicio">
+      <a href="/api/health">Salud de la API</a>
+      <a href="/api/ready">Disponibilidad completa</a>
+    </nav>
+    <footer>El estado se actualiza automáticamente cada 15 segundos.</footer>
+  </main>
+  <script>
+    const indicator = document.getElementById('indicator');
+    const title = document.getElementById('status-title');
+    const detail = document.getElementById('status-detail');
+    async function updateStatus() {
+      try {
+        const response = await fetch('/api/ready', { cache: 'no-store' });
+        const result = await response.json();
+        if (response.ok && result.status === 'ready') {
+          indicator.className = 'indicator ready';
+          title.textContent = 'Todos los servicios están operativos';
+          detail.textContent = 'La API, la base de datos y el bot están disponibles.';
+        } else {
+          indicator.className = 'indicator unavailable';
+          title.textContent = 'Servicios todavía no disponibles';
+          detail.textContent = 'El proyecto está desplegado, pero la base de datos o el bot no están listos.';
+        }
+      } catch {
+        indicator.className = 'indicator unavailable';
+        title.textContent = 'No se pudo verificar el estado';
+        detail.textContent = 'La página está publicada, pero no fue posible consultar la API.';
+      }
+    }
+    void updateStatus();
+    window.setInterval(updateStatus, 15000);
+  </script>
+</body>
+</html>`);
+  });
+
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
