@@ -13,8 +13,10 @@ const hints: Record<StartupStage, string> = {
 /** No registra mensajes, stacks ni objetos de librerias que puedan incluir credenciales. */
 export function startupErrorMessage(stage: StartupStage, cause: unknown): string {
   let detail = hints[stage];
+  let hasHttpErrorCode = false;
   if (stage === 'configuration' && cause instanceof ConfigError) detail = cause.message;
   else if (typeof cause === 'object' && cause !== null && 'code' in cause) {
+    hasHttpErrorCode = stage === 'http' && typeof cause.code === 'string';
     if (stage === 'http' && cause.code === 'EADDRINUSE') detail = 'El puerto configurado ya esta ocupado. Cierra el otro proceso o cambia PORT.';
     if (stage === 'http' && cause.code === 'EACCES') detail = 'El proceso no tiene permiso para abrir el puerto configurado.';
     if (stage === 'http' && cause.code === 'EADDRNOTAVAIL') detail = 'La interfaz de red solicitada no esta disponible para abrir el servidor HTTP.';
@@ -27,6 +29,14 @@ export function startupErrorMessage(stage: StartupStage, cause: unknown): string
     if (stage === 'mongodb' && 'syscall' in cause && (cause.syscall === 'querySrv' || cause.syscall === 'queryTxt')) detail = `Fallo de resolucion DNS ${cause.syscall === 'querySrv' ? 'SRV' : 'TXT'} de MongoDB. Comprueba el hostname del cluster y que tu red permita estas consultas DNS.`;
     if (stage === 'indexes' && cause.code === 11000) detail = 'Hay datos duplicados que impiden crear un indice unico.';
     if (stage === 'discord' && (cause.code === 'TokenInvalid' || cause.code === 4004)) detail = 'Discord rechazo el token recibido por este proceso. Una variable DISCORD_TOKEN heredada del entorno tiene prioridad sobre el archivo .env; comprueba cual se esta usando.';
+  }
+  if (stage === 'http' && !hasHttpErrorCode && cause instanceof Error) {
+    const message = cause.message
+      .replace(/(?:mongodb(?:\+srv)?|https?):\/\/[^\s]+/gi, '[URL]')
+      .replace(/\b(token|secret|password|authorization)\s*[:=]\s*[^\s,;]+/gi, '$1=[redactado]')
+      .replace(/[\r\n\t]+/g, ' ')
+      .slice(0, 240);
+    detail = message ? `Error HTTP: ${cause.name}: ${message}` : `Error HTTP: ${cause.name}.`;
   }
   if (stage === 'discord' && typeof cause === 'object' && cause !== null && 'status' in cause && cause.status === 401) detail = 'Discord rechazo el token recibido por este proceso (HTTP 401). Comprueba si DISCORD_TOKEN del entorno esta sustituyendo al del archivo .env.';
   return `No se pudo iniciar el backend [${labels[stage]}]: ${detail}`;
