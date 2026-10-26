@@ -51,6 +51,8 @@ El parametro confirma que ya se suspendio Render; no lo suspende por si mismo. E
 
 Se establece un maximo de 512 MiB para el heap de JavaScript. No es un limite de RAM total: buffers, FFmpeg y yt-dlp usan memoria adicional. Medir el consumo con una reproduccion antes de sumar canales.
 
+Si el lanzador se ejecuta en segundo plano, detenerlo con `npm run host:stop` desde `backend_magelina`. El supervisor solicita un cierre ordenado por stdin: el bot se desconecta y se cierra MongoDB antes de terminar. Los registros de esta instalacion estan en `.cache/host-pc.log` y `.cache/host-pc.error.log`; no se suben a Git. No compartir registros sin revisarlos.
+
 4. Desde `dashboard_magelina`, ejecutar con la direccion real obtenida de Funnel:
 
 ```powershell
@@ -72,7 +74,7 @@ Para dejar de publicar la API:
 & 'C:\Program Files\Tailscale\tailscale.exe' funnel --https=443 off
 ```
 
-Para volver a Render: detener primero el bot local con Ctrl+C, reactivar Render y verificar que este listo. Restaurar solo el destino de API en `dashboard_magelina/vercel.json` a `https://backendmagelina.onrender.com/api/:path*` y redesplegar Vercel. Conservar la regla a `/index.html`.
+Para volver a Render: detener primero el bot local con Ctrl+C o `npm run host:stop` y esperar a que se cierre, reactivar Render y verificar que este listo. Restaurar solo el destino de API en `dashboard_magelina/vercel.json` a `https://backendmagelina.onrender.com/api/:path*` y redesplegar Vercel. Conservar la regla a `/index.html`.
 
 Si Windows se cerro inesperadamente y queda `.cache/host-pc.lock`, verificar que no siga ejecutandose el host antes de retirar ese archivo. El lanzador nunca mata procesos ajenos ni elimina bloqueos automaticamente.
 
