@@ -20,6 +20,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new ConfigError('PORT debe ser un entero entre 1 y 65535.');
   }
+  const bindHost = env.BIND_HOST ?? '0.0.0.0';
+  if (!isIP(bindHost)) throw new ConfigError('BIND_HOST debe ser una direccion IP valida.');
 
   const dashboardOrigin = readUrl(env.DASHBOARD_ORIGIN ?? 'http://localhost:5173', 'DASHBOARD_ORIGIN');
   if (!['http:', 'https:'].includes(dashboardOrigin.protocol)) {
@@ -63,6 +65,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
     discordClientSecret: env.DISCORD_CLIENT_SECRET!,
     discordRedirectUri: redirect.href,
     port,
+    bindHost,
     dashboardOrigin: dashboardOrigin.origin,
     mongoUri: env.MONGODB_URI!,
     dnsServers,

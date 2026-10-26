@@ -26,6 +26,9 @@ test('configuracion rechaza secretos cortos y propietarios mal configurados', ()
     SESSION_SECRET: 'Test-only-AAaa11!!-session-secret-12345678', BOT_OWNER_IDS: '100000000000000001',
   };
   assert.equal(readConfig(env).ownerIds[0], env.BOT_OWNER_IDS);
+  assert.equal(readConfig(env).bindHost, '0.0.0.0');
+  assert.equal(readConfig({ ...env, BIND_HOST: '127.0.0.1' }).bindHost, '127.0.0.1');
+  assert.throws(() => readConfig({ ...env, BIND_HOST: 'https://example.com' }), /BIND_HOST/);
   assert.deepEqual(readConfig(env).dnsServers, []);
   assert.deepEqual(readConfig({ ...env, DNS_SERVERS: '1.1.1.1, 8.8.8.8' }).dnsServers, ['1.1.1.1', '8.8.8.8']);
   assert.throws(() => readConfig({ ...env, DNS_SERVERS: 'https://dns.example' }), /DNS_SERVERS/);

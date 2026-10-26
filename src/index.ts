@@ -8,6 +8,7 @@ import { BotControl, SystemEvent } from './database/models/BotControl.js';
 import { startAutomationWorker } from './modules/automations/worker.js';
 import type { Server } from 'node:http';
 import type { Client } from 'discord.js';
+import { createInterface } from 'node:readline';
 import { readConfig } from './config/env.js';
 import { startupErrorMessage } from './config/startup-error.js';
 import type { StartupStage } from './config/startup-error.js';
@@ -52,6 +53,11 @@ async function shutdown(exitCode = 0) {
 
 process.once('SIGINT', () => void shutdown());
 process.once('SIGTERM', () => void shutdown());
+if (process.env.HOST_PC_CONTROL === 'true') {
+  const control = createInterface({ input: process.stdin });
+  control.on('line', line => { if (line === 'shutdown') { control.close(); process.stdin.pause(); void shutdown(); } });
+  control.once('close', () => { process.stdin.pause(); void shutdown(); });
+}
 
 try {
   const config = readConfig();
@@ -72,7 +78,7 @@ try {
     startupStage = 'http';
     const app = createApp({ config, bot, isStopping: () => stopping });
     await new Promise<void>((resolve, reject) => {
-      server = app.listen(config.port, '0.0.0.0', () => resolve());
+      server = app.listen(config.port, config.bindHost, () => resolve());
       server.once('error', reject);
     });
     server!.on('error', () => {
