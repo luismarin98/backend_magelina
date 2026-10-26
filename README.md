@@ -126,3 +126,11 @@ Validacion: pruebas unitarias y HTTP con Discord simulado, consulta real de meta
 
 
 El monitor de Musica devuelve `player.positionMs` (posicion del recurso de audio) y `player.observedAt` en cada lectura, sin modificar la version de la cola. Tambien devuelve el numero de oyentes humanos del canal autorizado; se excluyen bots. La dashboard muestra portada, cancion, canal, solicitante, progreso aproximado, cola, tiempo pendiente y volumen. El progreso avanza localmente entre muestras y queda detenido durante la pausa; se refresca al recuperar el foco o la visibilidad de la pestana. El monitoreo requiere music.read y no concede controles adicionales.
+
+### Recursos de la instancia
+
+Centro de control > Estado del bot consulta `GET /api/admin/resources` cada cinco segundos con la pantalla visible. Requiere una sesion de propietario u operador. El endpoint no modifica recursos ni ajustes de Render, y comparte una muestra durante dos segundos para evitar lecturas excesivas.
+
+En Linux lee consumo y cuotas de cgroups v2 o v1, incluidos limites mas estrictos de ancestros visibles. CPU se expresa en vCPU consumidas durante el intervalo entre muestras; la primera lectura no calcula uso de CPU. Memoria se expresa en bytes del contenedor e incluye procesos auxiliares y memoria contabilizada por el sistema. Sin contadores del contenedor se informa solo el proceso Node; sin cuota detectable no se inventan limites usando los recursos de la maquina anfitriona. Los limites detectados son los visibles para la instancia, no una consulta al plan o la facturacion de Render. Contrastar con el tipo de instancia y las metricas del servicio en Render.
+
+El porcentaje es consumo / limite * 100. El margen hasta el limite es max(0, limite - consumo). El objetivo recomendado es 80% del limite y el margen hasta ese objetivo es max(0, limite * 0.8 - consumo). Se muestra aviso desde 80% y estado critico desde 90%. Son referencias visuales: no aplican throttling, no paran canciones y no estiman cuantos servidores adicionales caben. No requiere nuevas variables de entorno.

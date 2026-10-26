@@ -10,6 +10,7 @@ import { auditRoutes } from '../modules/audit/routes.js';
 import { operationRoutes } from '../modules/operations/routes.js';
 import { commandRoutes } from '../modules/operations/commands.js';
 import { effectiveRole } from '../modules/operations/roles.js';
+import { getResourceUsage } from '../modules/operations/resources.js';
 import { guildAuthorization } from '../modules/permissions/access.js';
 import { permissionRoutes } from '../modules/permissions/routes.js';
 import { getSettings } from '../modules/settings/service.js';
@@ -64,6 +65,9 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
     next();
   });
   router.use('/admin/operations', operationRoutes(config));
+  router.get('/admin/resources', async (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(await getResourceUsage());
+  });
   router.get('/admin/users', identities);
   router.use('/admin/commands', commandRoutes(config, undefined, bot));
   router.get('/admin/overview', (_req, res) => {

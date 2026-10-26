@@ -91,6 +91,16 @@ export interface BotControlValues { operatorIds: string[]; maintenance: boolean;
 export interface BotControlDto extends BotControlValues { version: number; history: { actorId: string; at: string; before: BotControlValues; after: BotControlValues }[] }
 export interface OperationsResponse { controls: BotControlDto; jobs: AutomationJobDto[]; events: { _id: string; kind: string; guildId: string | null; at: string; message: string }[]; nextJobCursor: string | null; nextEventCursor: string | null }
 
+export interface ResourceBudget {
+  used: number | null; limit: number | null; percent: number | null; remaining: number | null;
+  recommendedLimit: number | null; safeRemaining: number | null; status: 'unknown' | 'normal' | 'warning' | 'critical';
+}
+export interface ResourceUsage {
+  sampledAt: string; intervalMs: number | null;
+  cpu: ResourceBudget & { scope: 'container' | 'process' };
+  memory: ResourceBudget & { scope: 'container' | 'process'; processRss: number; heapUsed: number };
+}
+
 export type ModerationAction = 'warning' | 'timeout' | 'untimeout' | 'kick' | 'ban';
 export interface ModerationMember {
   id: string; name: string; username: string; avatar: DiscordImage | null; bot: boolean;
