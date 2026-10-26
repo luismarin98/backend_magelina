@@ -121,7 +121,7 @@ export function createApp({ config, bot, isStopping }: AppDependencies) {
   app.use(session({
     name: 'bot.sid', secret: config.sessionSecret, resave: false, saveUninitialized: false,
     store: createSessionStore(mongoose.connection.getClient(), config.sessionSecret),
-    cookie: { httpOnly: true, secure: config.production, sameSite: config.production ? 'none' : 'lax', maxAge: 8 * 60 * 60 * 1000 },
+    cookie: { httpOnly: true, secure: config.production, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000 },
   }));
   app.use('/api/auth', authRoutes(config));
   app.use('/api', managementRoutes({ bot, config }));
