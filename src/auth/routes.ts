@@ -88,7 +88,7 @@ export function authRoutes(config: Config) {
     profiles.delete(req.sessionID);
     req.session.destroy((error) => {
       if (error) return next(error);
-      res.clearCookie('bot.sid', { path: '/', httpOnly: true, sameSite: 'lax', secure: config.production });
+      res.clearCookie('bot.sid', { path: '/', httpOnly: true, sameSite: config.production ? 'none' : 'lax', secure: config.production });
       res.status(204).end();
     });
   });

@@ -18,6 +18,8 @@ El arranque valida la configuraciÃ³n, conecta MongoDB, inicia Discord y abre E
 
 Al desplegar en Render, abre la URL publica del servicio para ver la pagina de estado. Puedes configurar `/api/health` como ruta de Health Check en Render.
 
+Si la dashboard y la API usan dominios distintos (por ejemplo, Vercel y Render), las solicitudes de la dashboard deben incluir credenciales (`credentials: 'include'` en `fetch` o `withCredentials: true` en Axios). En produccion la cookie de sesion usa `SameSite=None; Secure` para permitir el flujo OAuth entre sitios. Algunos navegadores bloquean cookies de terceros de todas formas; para esos casos, usa dominios propios del mismo sitio o un proxy de API bajo el dominio de la dashboard.
+
 CORS permite el origen configurado de la dashboard. CORS no es autenticacion. Las consultas de servidores estan protegidas mediante sesion y comprobacion de permisos; aun no se exponen operaciones para modificarlos.
 
 ## Acceso y dashboard
