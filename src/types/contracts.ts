@@ -113,5 +113,5 @@ export interface MusicState {
   version: number; channelId: string | null; status: 'disconnected' | 'idle' | 'buffering' | 'playing' | 'paused';
   current: MusicQueueEntry | null; queue: MusicQueueEntry[]; volume: number; error: string | null; positionMs?: number; observedAt?: string;
 }
-export interface MusicResponse { player: MusicState; enabled: boolean; youtubeEnabled?: boolean; channels: { id: string; name: string; canConnect: boolean }[]; canRequest: boolean; canManage: boolean; listeners?: number }
+export interface MusicResponse { player: MusicState; enabled: boolean; youtubeEnabled?: boolean; canEnableYouTube?: boolean; channels: { id: string; name: string; canConnect: boolean }[]; canRequest: boolean; canManage: boolean; listeners?: number }
 export interface MusicSearchResponse { tracks: MusicTrack[] }

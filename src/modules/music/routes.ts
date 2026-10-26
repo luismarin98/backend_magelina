@@ -26,9 +26,16 @@ export function musicRoutes(requireCapability: RequireCapability, service: Music
     const channel = player.channelId ? channels.get(player.channelId) : null;
     if (player.channelId && (!channel || !visible(channel, actor))) throw workflowError(403, 'No puedes consultar la cola de un canal privado al que no tienes acceso.');
     const listeners = channel?.type === ChannelType.GuildVoice ? [...channel.members.values()].filter((member) => !member.user.bot).length : 0;
-    res.json({ player, listeners, youtubeEnabled: service.provider instanceof MusicSources && Boolean(service.provider.youtube), enabled: settings.modules.music, canRequest: req.guildAccess!.capabilities.includes('music.request'), canManage: req.guildAccess!.capabilities.includes('music.manage'),
+    res.json({ player, listeners, canEnableYouTube: req.guildAccess!.source === 'bot-owner', youtubeEnabled: service.provider instanceof MusicSources && Boolean(service.provider.youtube), enabled: settings.modules.music, canRequest: req.guildAccess!.capabilities.includes('music.request'), canManage: req.guildAccess!.capabilities.includes('music.manage'),
       channels: [...channels.values()].filter((entry) => entry !== null).filter((entry) => entry.type === ChannelType.GuildVoice && visible(entry, actor)).sort((a, b) => a.rawPosition - b.rawPosition).map((entry) => ({ id: entry.id, name: entry.name,
         canConnect: Boolean(entry.permissionsFor(me)?.has([P.ViewChannel, P.Connect, P.Speak])) && (!actor || Boolean(entry.permissionsFor(actor)?.has(P.Connect))) })) });
+  });
+  router.post('/youtube/enable', requireCapability('music.manage'), async (req, res) => {
+    if (req.guildAccess!.source !== 'bot-owner') throw workflowError(403, 'Solo el propietario del bot puede habilitar esta fuente global.');
+    object(req.body, ['version']);
+    if (!(service.provider instanceof MusicSources)) throw workflowError(503, 'Este backend no admite activar YouTube.');
+    service.provider.enableYouTube();
+    res.json({ youtubeEnabled: Boolean(service.provider.youtube) });
   });
   router.get('/search', requireCapability('music.read'), async (req, res) => {
     await requireModule(routeParam(req, 'guildId'), 'music');

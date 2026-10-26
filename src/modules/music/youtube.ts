@@ -165,8 +165,8 @@ export class YouTubeExtractor {
     return stream;
   }
 }
-export function configuredYouTube(): YouTubeExtractor | null {
-  if (process.env.YOUTUBE_EXPERIMENTAL !== 'true') return null;
+export function configuredYouTube(activate = false): YouTubeExtractor | null {
+  if (!activate && process.env.YOUTUBE_EXPERIMENTAL !== 'true') return null;
   const executable = process.env.YTDLP_PATH || resolve(process.cwd(), '.tools', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
   if (!existsSync(executable)) throw workflowError(503, 'Instala yt-dlp y configura YTDLP_PATH antes de habilitar YouTube.');
   return new YouTubeExtractor(executable);

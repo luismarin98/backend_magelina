@@ -1,7 +1,7 @@
 import type { MusicProvider } from './audius.js';
 import { trackId } from './audius.js';
 import type { YouTubeExtractor } from './youtube.js';
-import { youtubeId } from './youtube.js';
+import { youtubeId, configuredYouTube } from './youtube.js';
 import { openAudio } from './network.js';
 import { workflowError } from '../workflow/rules.js';
 
@@ -10,7 +10,10 @@ export function musicTrackId(value: unknown): string {
   return trackId(value);
 }
 export class MusicSources implements MusicProvider {
-  constructor(private readonly audius: MusicProvider, readonly youtube: YouTubeExtractor | null) {}
+  constructor(private readonly audius: MusicProvider, public youtube: YouTubeExtractor | null) {}
+  enableYouTube() {
+    this.youtube ??= configuredYouTube(true);
+  }
   search(query: string, source: 'audius' | 'youtube' = 'audius') {
     if (source === 'audius') return this.audius.search(query);
     if (!this.youtube) throw workflowError(503, 'La fuente experimental de YouTube no está habilitada.');

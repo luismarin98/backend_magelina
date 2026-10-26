@@ -53,6 +53,7 @@ test('music HTTP enforces capabilities, membership in voice, bot permissions and
     assert.equal((await post('connect', { channelId, version: 0 })).status, 403);
     capabilities = ['music.read', 'music.request', 'music.manage'];
     assert.equal((await post('connect', { channelId, version: 0 })).status, 403);
+    assert.equal((await post('youtube/enable', {})).status, 403);
     actor.voice.channelId = channelId; canSpeak = false;
     assert.equal((await post('connect', { channelId, version: 0 })).status, 403);
     canSpeak = true;
