@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { MessageFlags, type Interaction } from 'discord.js';
 import type { Config } from '../config/env.js';
 import type { Capability } from '../types/contracts.js';
@@ -15,12 +16,12 @@ export async function handleSlash(interaction: Interaction, config: Pick<Config,
   const i = interaction;
   try {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!i.guild) throw workflowError(400, 'Esta función solo está disponible en servidores.');
+    if (!i.guild) throw workflowError(400, t("Esta funci\u00f3n solo est\u00e1 disponible en servidores."));
     const { member, access } = await commandAccess(i, config);
     const command = i.options.getSubcommand();
     await assertAvailable(i.guild.id, undefined, command === 'solicitud' || (interaction.commandName === 'musica' && !['buscar', 'cola'].includes(command)));
     const requireCapability = (capability: Capability) => {
-      if (!access.capabilities.includes(capability)) throw workflowError(403, 'No tienes permiso para utilizar esta función.');
+      if (!access.capabilities.includes(capability)) throw workflowError(403, t("No tienes permiso para utilizar esta funci\u00f3n."));
     };
     const execute = i.commandName === 'musica' ? executeMusic : executeCommunity;
     const content = await execute({ i, config, member, access, command, requireCapability });
@@ -28,7 +29,7 @@ export async function handleSlash(interaction: Interaction, config: Pick<Config,
     await i.editReply({ content: content.slice(0, 2000), allowedMentions: { parse: [] } });
   } catch (error) {
     logRecord('bot.command.failed', { command: i.commandName, guildId: i.guildId, outcome: 'failed' });
-    const content = error instanceof Error && 'publicMessage' in error && typeof error.publicMessage === 'string' ? error.publicMessage : 'No se pudo completar el comando. Comprueba los permisos y vuelve a intentarlo.';
+    const content = error instanceof Error && 'publicMessage' in error && typeof error.publicMessage === 'string' ? t(error.publicMessage) : t("No se pudo completar el comando. Comprueba los permisos y vuelve a intentarlo.");
     try {
       if (i.deferred || i.replied) await i.editReply({ content, allowedMentions: { parse: [] } });
       else await i.reply({ content, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });

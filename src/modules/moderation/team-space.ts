@@ -1,3 +1,4 @@
+import { t, withLanguage } from '../../i18n/index.js';
 import { Router } from 'express';
 import { ChannelType, PermissionFlagsBits as P, type Guild, type GuildChannel } from 'discord.js';
 import type { guildAuthorization } from '../permissions/access.js';
@@ -98,10 +99,7 @@ export function teamSpaceRoutes(access: ReturnType<typeof guildAuthorization>) {
     try {
       const filter={guildId:req.managedGuild!.id,state:{$ne:'closed'}};
       const [pending,unassigned]=await Promise.all([ModerationFollowup.countDocuments({...filter,reviewAt:{$lte:new Date()}}),ModerationFollowup.countDocuments({...filter,assigneeId:null})]);
-      const payload={content:`Resumen del equipo
-Revisiones pendientes: ${pending}
-Seguimientos sin responsable: ${unassigned}
-Consulta la dashboard para revisar el contexto. Estos recuentos no implican infracciones confirmadas.`,allowedMentions:{parse:[] as never[]}};
+      const payload={content:withLanguage(req.managedGuild!.preferredLocale,()=>t('team.summary',{pending,unassigned})),allowedMentions:{parse:[] as never[]}};
       if(space.summaryMessageId) await channel.messages.edit(space.summaryMessageId,payload);
       else { await TeamSpace.updateOne({_id:space._id},{$set:{summaryPending:true}});const message=await channel.send(payload);await TeamSpace.updateOne({_id:space._id},{$set:{summaryMessageId:message.id,summaryPending:false}}); }
       res.json({ok:true});

@@ -1,3 +1,4 @@
+import { t } from '../../../i18n/index.js';
 import { SlashCommandSubcommandBuilder } from 'discord.js';
 import type { MusicContext } from './context.js';
 
@@ -8,5 +9,5 @@ export async function execute({ i, service, state, authorize }: MusicContext) {
   const { workflowError } = await import('../../../modules/workflow/rules.js');
   if (!/^[a-f\d-]{36}$/i.test(String(value))) throw workflowError(400, 'Identificador de entrada no válido.');
   await service.control(i.guild!.id, 'remove', state.version, authorize, value);
-  return 'Reproductor actualizado. Consulta /musica cola o el dashboard.';
+  return t("Reproductor actualizado. Consulta /musica cola o el dashboard.");
 }

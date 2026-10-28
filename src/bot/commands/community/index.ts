@@ -11,7 +11,7 @@ import * as automatizaciones from './automatizaciones.js';
 export { panelSections } from './sections.js';
 
 export const subcommands = [ayuda, panel, solicitudes, solicitud, conocimiento, proyectos, colaboracion, automatizaciones] as const;
-export const managerCommand = new SlashCommandBuilder().setName('magelina').setDescription('Herramientas de tu comunidad').setDMPermission(false);
+export const managerCommand = new SlashCommandBuilder().setName('magelina').setDescription('Herramientas de tu comunidad').setDescriptionLocalizations({ "en-US": "Your community tools", "en-GB": "Your community tools" }).setDMPermission(false);
 for (const command of subcommands) managerCommand.addSubcommand(command.definition);
 
 export async function executeCommunity(context: SlashContext) {

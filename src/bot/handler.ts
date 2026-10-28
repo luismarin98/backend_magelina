@@ -1,3 +1,4 @@
+import { withLanguage } from '../i18n/index.js';
 import type { Interaction } from 'discord.js';
 import type { Config } from '../config/env.js';
 import { commandsByKey, commandKey } from './commands/registry.js';
@@ -22,7 +23,7 @@ export function interactionRoute(interaction: Interaction): keyof InteractionHan
 export async function dispatchInteraction(interaction: Interaction, handlers: InteractionHandlers) {
   const route = interactionRoute(interaction);
   if (!route) return false;
-  await handlers[route](interaction);
+  await withLanguage(interaction.locale ?? interaction.guildLocale, () => handlers[route](interaction));
   return true;
 }
 

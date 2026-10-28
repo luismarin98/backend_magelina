@@ -1,7 +1,7 @@
 import { SlashCommandSubcommandBuilder } from 'discord.js';
 import type { SlashContext } from './context.js';
 
-export const definition = new SlashCommandSubcommandBuilder().setName('ayuda').setDescription('Consulta las habilidades y comandos de Magelina');
+export const definition = new SlashCommandSubcommandBuilder().setName('ayuda').setDescription('Consulta las habilidades y comandos de Magelina').setDescriptionLocalizations({ "en-US": "Explore Magelina features and commands", "en-GB": "Explore Magelina features and commands" });
 
 export async function execute({ i }: SlashContext) {
   const { helpPanel } = await import('../../interactive.js');

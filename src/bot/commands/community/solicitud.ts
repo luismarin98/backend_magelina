@@ -1,3 +1,4 @@
+import { t } from '../../../i18n/index.js';
 import { SlashCommandSubcommandBuilder } from 'discord.js';
 import type { SlashContext } from './context.js';
 
@@ -22,10 +23,10 @@ export async function execute({ i, requireCapability }: SlashContext) {
   const item = await changeRequest({ guildId: i.guild.id, itemId, actorId: i.user.id, guild: i.guild,
     body: { status: i.options.getString('estado', true), version: i.options.getInteger('version', true), ...(assignee ? { assigneeId: assignee.id } : {}) } });
   try { await enqueueTaskEvent(item); } catch { await logEvent('automation.enqueue.error', `No se pudo encolar el evento de la tarea ${item.id}; el trabajador lo reconciliara.`, item.guildId); }
-  let notification = 'No se pudo enviar el aviso; el cambio quedó guardado.';
+  let notification = t("No se pudo enviar el aviso; el cambio qued\u00f3 guardado.");
   try {
     const settings = await getSettings(i.guild.id);
-    notification = !settings.notifications.enabled ? 'Avisos deshabilitados.' : await notifyChange(i.client, { id: String(item._id), guildId: item.guildId, status: item.status, sourceChannelId: item.sourceChannelId }, settings.notifications.channelId) ? 'Aviso enviado.' : notification;
+    notification = !settings.notifications.enabled ? t("Avisos deshabilitados.") : await notifyChange(i.client, { id: String(item._id), guildId: item.guildId, status: item.status, sourceChannelId: item.sourceChannelId }, settings.notifications.channelId) ? t("Aviso enviado.") : notification;
   } catch { /* El cambio ya está persistido. */ }
   content = `Solicitud actualizada: ${statusLabels[item.status]}. Versión: ${item.version}. ${notification}`;
 
