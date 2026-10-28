@@ -1,3 +1,4 @@
+import { followupRoutes } from './followups.js';
 ﻿import { PermissionFlagsBits } from 'discord.js';
 import { requireModule } from '../settings/service.js';
 import { assertAvailable } from '../operations/service.js';
@@ -48,6 +49,7 @@ export function moderationRoutes(access: ReturnType<typeof guildAuthorization>) 
     res.locals.moderationContext = await context(req.managedGuild!, req.session.user!.id, req.guildAccess!.source === 'bot-owner');
     next();
   });
+  router.use('/followups', followupRoutes());
   router.get('/members', async (req, res) => {
     const guild = req.managedGuild!;
     const after = req.query.after === undefined ? undefined : id(req.query.after, true);
