@@ -76,6 +76,6 @@ Para dejar de publicar la API:
 
 Para volver a Render: detener primero el bot local con Ctrl+C o `npm run host:stop` y esperar a que se cierre, reactivar Render y verificar que este listo. Configurar `BACKEND_ORIGIN=https://backendmagelina.onrender.com` en Vercel y redesplegar. `vercel.mjs` conserva la regla a `/index.html`.
 
-Si Windows se cerro inesperadamente y queda `.cache/host-pc.lock`, verificar que no siga ejecutandose el host antes de retirar ese archivo. El lanzador nunca mata procesos ajenos ni elimina bloqueos automaticamente.
+`npm run host:stop` espera hasta 15 segundos para confirmar el cierre antes de permitirte reiniciar. Si vence ese plazo, revisar la terminal y los registros del host. Tanto el arranque como el cierre retiran un bloqueo antiguo solo cuando su PID ya no existe; conservan los bloqueos de procesos activos o que no se pueden comprobar. El lanzador nunca mata procesos ajenos. Si el bloqueo contiene un PID invalido, verificar manualmente que no siga ejecutandose el host antes de retirar el archivo.
 
 Fuentes: [Funnel](https://tailscale.com/docs/features/tailscale-funnel), [CLI y persistencia](https://tailscale.com/docs/reference/tailscale-cli/funnel), [plan Personal](https://tailscale.com/pricing).

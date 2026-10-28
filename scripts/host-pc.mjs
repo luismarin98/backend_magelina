@@ -6,6 +6,7 @@ import { parseEnv } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import { createServer } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = resolve(root, '.env.pc');
@@ -13,6 +14,21 @@ const tailscale = resolve(process.env.ProgramFiles || 'C:/Program Files', 'Tails
 const command = process.argv[2];
 const stopFile = resolve(root, '.cache/host-pc.stop');
 const lock = resolve(root, '.cache/host-pc.lock');
+
+async function clearStaleLock() {
+  let owner;
+  try { owner = await readFile(lock, 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+  const pid = Number(owner);
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('El bloqueo del host no contiene un PID valido. Revisa el proceso antes de retirar .cache/host-pc.lock.');
+  try { process.kill(pid, 0); return false; }
+  catch (error) { if (error.code !== 'ESRCH') throw error; }
+  // No retirar un bloqueo que haya sido sustituido mientras se comprobaba el PID.
+  if (await readFile(lock, 'utf8').catch(error => { if (error.code === 'ENOENT') return null; throw error; }) !== owner) return false;
+  await unlink(lock).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  console.log('Se retiro el bloqueo de un host que ya no esta en ejecucion.');
+  return true;
+}
 
 async function prepare() {
   if (existsSync(envPath)) { console.log('.env.pc ya existe; se conserva su configuracion.'); return; }
@@ -62,8 +78,9 @@ async function start() {
   if (!process.argv.includes('--render-stopped')) throw new Error('Primero suspende el servicio de Render. Luego ejecuta npm run host:pc -- -RenderStopped.');
   const env = await check();
   await mkdir(dirname(lock), { recursive: true });
+  await clearStaleLock();
   try { await writeFile(lock, String(process.pid), { flag: 'wx' }); }
-  catch { throw new Error('Ya existe .cache/host-pc.lock. Comprueba si el host sigue abierto antes de retirar un bloqueo antiguo.'); }
+  catch (error) { if (error.code !== 'EEXIST') throw error; throw new Error('El host sigue en ejecucion. Ejecuta npm run host:stop y espera a que confirme el cierre.'); }
   let child;
   let stopTimer;
   // Windows entrega Ctrl+C tambien al hijo que hereda esta consola.
@@ -95,9 +112,18 @@ async function start() {
 }
 
 async function stopHost() {
-  if (!existsSync(lock)) { console.log('No hay un host iniciado con este lanzador.'); return; }
+  if (await clearStaleLock()) { console.log('No hay un host iniciado con este lanzador.'); return; }
   await writeFile(stopFile, 'shutdown\n');
   console.log('Cierre solicitado. El host desconectara el bot y cerrara la base de datos.');
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    await delay(250);
+    if (await clearStaleLock()) {
+      console.log('Host detenido. Ya puedes volver a iniciarlo.');
+      return;
+    }
+  }
+  throw new Error('El host no confirmo el cierre en 15 segundos. Revisa su terminal y los registros; no se forzo su finalizacion.');
 }
 
 try {
@@ -105,7 +131,7 @@ try {
   else if (command === 'check') await check(!process.argv.includes('--without-tunnel'));
   else if (command === 'start') await start();
   else if (command === 'stop') await stopHost();
-  else throw new Error('Usa prepare, check o start.');
+  else throw new Error('Usa prepare, check, start o stop.');
 } catch (error) {
   // Nunca imprimir errores de procesos externos o valores de las credenciales.
   console.error(error?.code ? `No se pudo completar ${command}: ${error.code}. Revisa HOSTING-PC.md.` : error.message);
