@@ -1,3 +1,4 @@
+import { workflowLog } from '../../discord/log-messages.js';
 import { WorkItem } from '../../database/models/WorkItem.js';
 import { transitions, validateChange, workflowError } from './rules.js';
 import type { WorkItemRecord } from '../../database/models/WorkItem.js';
@@ -54,14 +55,11 @@ export async function changeRequest({ guildId, itemId, actorId, body: input, gui
   return item;
 }
 
-export async function notifyChange(bot: { channels: Pick<Client['channels'], 'fetch'> }, item: Pick<WorkItemRecord, 'sourceChannelId' | 'guildId' | 'status'> & { id: string }, channelId: string | null = null) {
+export async function notifyChange(bot: { channels: Pick<Client['channels'], 'fetch'> }, item: Pick<WorkItemRecord, 'sourceChannelId' | 'guildId' | 'status'> & { id: string }, channelId: string | null = null, details: { actorId?: string; assigneeId?: string | null; at?: Date; dashboardOrigin?: string } = {}) {
   try {
     const channel = await bot.channels.fetch(channelId ?? item.sourceChannelId);
     if (!channel?.isTextBased() || !channel.isSendable() || !('guildId' in channel) || channel.guildId !== item.guildId) return false;
-    await channel.send({
-      content: `Solicitud ${item.id}: ${statusLabels[item.status]}. Consulta el detalle en la dashboard.`,
-      allowedMentions: { parse: [] },
-    });
+    await channel.send(workflowLog({id:item.id,guildId:item.guildId,status:item.status,...details,locale:'guild' in channel ? channel.guild.preferredLocale : undefined}));
     return true;
   } catch { return false; }
 }

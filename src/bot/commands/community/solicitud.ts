@@ -8,7 +8,7 @@ export const definition = new SlashCommandSubcommandBuilder().setName('solicitud
     .addStringOption(o => o.setName('estado').setDescription('Nuevo estado').setRequired(true).addChoices({ name: 'Aceptar', value: 'accepted' }, { name: 'Rechazar', value: 'rejected' }, { name: 'En curso', value: 'in_progress' }, { name: 'Completar', value: 'completed' }))
     .addUserOption(o => o.setName('responsable').setDescription('Obligatorio al aceptar; solo en ese paso'));
 
-export async function execute({ i, requireCapability }: SlashContext) {
+export async function execute({ i, requireCapability, config }: SlashContext) {
   const { workflowError } = await import('../../../modules/workflow/rules.js');
   const { changeRequest, notifyChange, statusLabels } = await import('../../../modules/workflow/service.js');
   const { enqueueTaskEvent } = await import('../../../modules/automations/service.js');
@@ -26,7 +26,7 @@ export async function execute({ i, requireCapability }: SlashContext) {
   let notification = t("No se pudo enviar el aviso; el cambio qued\u00f3 guardado.");
   try {
     const settings = await getSettings(i.guild.id);
-    notification = !settings.notifications.enabled ? t("Avisos deshabilitados.") : await notifyChange(i.client, { id: String(item._id), guildId: item.guildId, status: item.status, sourceChannelId: item.sourceChannelId }, settings.notifications.channelId) ? t("Aviso enviado.") : notification;
+    notification = !settings.notifications.enabled ? t("Avisos deshabilitados.") : await notifyChange(i.client, { id: String(item._id), guildId: item.guildId, status: item.status, sourceChannelId: item.sourceChannelId }, settings.notifications.channelId, {actorId:i.user.id,assigneeId:item.assigneeId,at:item.updatedAt,dashboardOrigin:config.dashboardOrigin}) ? t("Aviso enviado.") : notification;
   } catch { /* El cambio ya está persistido. */ }
   content = `Solicitud actualizada: ${statusLabels[item.status]}. Versión: ${item.version}. ${notification}`;
 

@@ -37,7 +37,7 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   const identities = userIdentities(bot);
   router.get('/guilds/:guildId/users', access.requireAny, identities);
 
-  router.use('/guilds/:guildId/work-items', workflowRoutes({ bot, requireCapability: access.requireCapability }));
+  router.use('/guilds/:guildId/work-items', workflowRoutes({ bot, requireCapability: access.requireCapability, dashboardOrigin: config.dashboardOrigin }));
   router.use('/guilds/:guildId/knowledge', knowledgeRoutes({ requireCapability: access.requireCapability }));
   router.use('/guilds/:guildId/settings', settingsRoutes({ requireGuildManager }));
 
@@ -47,7 +47,7 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   router.use('/guilds/:guildId/audit-logs', auditRoutes(access.requireCapability));
 
   router.use('/guilds/:guildId/music', musicRoutes(access.requireCapability, getMusicService(bot, config.audiusApiKey)));
-  router.use('/guilds/:guildId/team-space', teamSpaceRoutes(access));
+  router.use('/guilds/:guildId/team-space', teamSpaceRoutes(access, config.dashboardOrigin));
   router.use('/guilds/:guildId/moderation', moderationRoutes(access));
   router.use('/guilds/:guildId/permissions', permissionRoutes(requireGuildManager));
   router.get('/guilds/:guildId/access', access.requireMember, async (req, res) => {

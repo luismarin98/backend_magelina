@@ -1,10 +1,11 @@
+import { STATUS_CODES } from 'node:http';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { REST, RESTEvents } from 'discord.js';
 
 const context = new AsyncLocalStorage<{ requestId: string }>();
-const segments = new Set('api v10 v1 auth discord callback logout me users @me guilds channels members roles messages applications commands interactions webhooks oauth2 token gateway bot work-items knowledge projects collaboration automations audit-logs music search connect queue control settings access permissions admin overview operations jobs retry targets sync unpublish health ready profiles mentorships cases moderation tracks stream'.split(' '));
+const segments = new Set('api v10 v1 auth discord callback logout me users @me guilds channels members roles messages applications commands interactions webhooks oauth2 token gateway bot work-items knowledge projects collaboration automations audit-logs music search connect queue control settings access permissions admin overview operations jobs retry targets sync unpublish health ready profiles mentorships cases moderation tracks stream team-space prepare summary followups catalog resources type apply-template youtube enable voices'.split(' '));
 /** Logs never include query strings, credentials, request bodies or arbitrary path segments. */
 export function safeRoute(value: string): string {
   let pathname: string;
@@ -17,12 +18,30 @@ export function safeRoute(value: string): string {
     return /^\d{17,20}$/.test(part) || /^[a-f\d]{24}$/i.test(part) ? ':id' : ':value';
   }).join('/');
 }
-interface Fields { method?: string; route?: string; service?: string; status?: number; durationMs?: number; outcome?: string; command?: string; guildId?: string | null; action?: string; requestId?: string; positionMs?: number; expectedDurationMs?: number; exitCode?: number | null; reason?: string }
+interface Fields { operationId?: string; method?: string; route?: string; service?: string; status?: number; durationMs?: number; outcome?: string; command?: string; guildId?: string | null; action?: string; requestId?: string; positionMs?: number; expectedDurationMs?: number; exitCode?: number | null; reason?: string }
+export function requestOutcome(status: number): string { return status >= 500 ? 'failed' : status >= 400 ? 'rejected' : status >= 300 ? 'redirected' : 'completed'; }
+export function describeEvent(event: string, fields: Fields): string {
+  const incoming = event.startsWith('http.in.');
+  const label = event.endsWith('.start') ? (incoming ? 'Peticion recibida' : 'Peticion enviada') : event === 'discord.rate-limited' ? 'Discord solicita esperar antes de reintentar' : fields.outcome === 'aborted' ? 'Conexion interrumpida antes de completar la respuesta' : fields.outcome === 'failed' ? 'La operacion fallo' : fields.outcome === 'rejected' ? 'Peticion rechazada' : fields.outcome === 'redirected' ? 'Redireccion enviada' : fields.outcome === 'headers-received' ? 'Cabeceras de respuesta recibidas' : incoming ? 'Respuesta enviada' : event === 'discord.http.response' ? 'Respuesta HTTP de Discord' : 'Operacion completada';
+  if (!event.startsWith('http.') && !event.startsWith('discord.')) return event;
+  return label;
+}
+export function formatLog(record: Record<string, unknown>): string {
+  const endpoint = [record.method, record.route].filter(Boolean).join(' ');
+  const status = typeof record.status === 'number' ? `HTTP ${record.status} ${record.statusLabel ?? ''}`.trim() : '';
+  const timing = typeof record.durationMs === 'number' ? `${record.durationMs} ms` : '';
+  const context = [record.requestId ? `request=${record.requestId}` : '', record.operationId ? `operation=${record.operationId}` : ''].filter(Boolean).join(' ');
+  const known = new Set(['time','level','event','message','method','route','status','statusLabel','durationMs','requestId','operationId','service','outcome']);
+  const extra = Object.fromEntries(Object.entries(record).filter(([key])=>!known.has(key)));
+  return [record.time, String(record.level).toUpperCase(), record.service ?? 'backend', record.event, record.message, endpoint, status, timing, context, Object.keys(extra).length ? JSON.stringify(extra) : ''].filter(Boolean).join(' | ');
+}
 export function logRecord(event: string, fields: Fields = {}) {
   if (process.env.REQUEST_LOGGING === 'false') return;
-  const level = fields.outcome === 'failed' || (fields.status ?? 0) >= 500 ? 'error' : (fields.status ?? 0) >= 400 ? 'warn' : 'info';
-  const record = JSON.stringify({ time: new Date().toISOString(), level, event, ...context.getStore(), ...fields });
-  if (level === 'error') console.error(record); else if (level === 'warn') console.warn(record); else console.info(record);
+  const level = fields.outcome === 'failed' || (fields.status ?? 0) >= 500 ? 'error' : fields.outcome === 'aborted' || (fields.status ?? 0) >= 400 ? 'warn' : 'info';
+  const record = { time: new Date().toISOString(), level, event, message: describeEvent(event,fields), ...context.getStore(), ...fields,
+    ...(fields.status === undefined ? {} : {statusLabel:STATUS_CODES[fields.status] ?? 'Unknown status'}) };
+  const output = process.env.LOG_FORMAT === 'pretty' ? formatLog(record) : JSON.stringify(record);
+  if (level === 'error') console.error(output); else if (level === 'warn') console.warn(output); else console.info(output);
 }
 export function traceOperation<T>(operation: () => T): T { return context.run({ requestId: randomUUID() }, operation); }
 const elapsed = (start: number) => Math.round((performance.now() - start) * 10) / 10;
@@ -33,17 +52,17 @@ export const requestLogging: RequestHandler = (req, res, next) => {
     res.setHeader('X-Request-ID', requestId);
     logRecord('http.in.start', fields);
     let finished = false;
-    res.once('finish', () => { finished = true; logRecord('http.in.end', { ...fields, status: res.statusCode, durationMs: elapsed(start), outcome: 'completed' }); });
+    res.once('finish', () => { finished = true; logRecord('http.in.end', { ...fields, status: res.statusCode, durationMs: elapsed(start), outcome: requestOutcome(res.statusCode) }); });
     res.once('close', () => { if (!finished) logRecord('http.in.end', { ...fields, durationMs: elapsed(start), outcome: 'aborted' }); });
     next();
   });
 };
 export async function observedFetch(service: 'discord-oauth' | 'audius', input: string | URL, init?: RequestInit): Promise<Response> {
-  const fields = { service, method: init?.method ?? 'GET', route: safeRoute(String(input)) }, start = performance.now();
+  const fields = { operationId: randomUUID(), service, method: init?.method ?? 'GET', route: safeRoute(String(input)) }, start = performance.now();
   logRecord('http.out.start', fields);
   try {
     const response = await fetch(input, init);
-    logRecord('http.out.end', { ...fields, status: response.status, durationMs: elapsed(start), outcome: 'headers-received' });
+    logRecord('http.out.end', { ...fields, status: response.status, durationMs: elapsed(start), outcome: response.status >= 400 ? requestOutcome(response.status) : 'headers-received' });
     return response;
   } catch (error) {
     logRecord('http.out.end', { ...fields, durationMs: elapsed(start), outcome: 'failed' });
@@ -56,7 +75,7 @@ export function observeDiscordRest(rest: REST): REST {
   observed.add(rest);
   const request = rest.request.bind(rest);
   rest.request = async options => {
-    const fields = { service: 'discord', method: options.method, route: safeRoute(options.fullRoute) }, start = performance.now();
+    const fields = { operationId: randomUUID(), service: 'discord', method: options.method, route: safeRoute(options.fullRoute) }, start = performance.now();
     logRecord('http.out.start', fields);
     try {
       const response = await request(options);

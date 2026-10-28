@@ -1,4 +1,4 @@
-import { t, withLanguage } from '../../i18n/index.js';
+import { teamSummaryLog } from '../../discord/log-messages.js';
 import { Router } from 'express';
 import { ChannelType, PermissionFlagsBits as P, type Guild, type GuildChannel } from 'discord.js';
 import type { guildAuthorization } from '../permissions/access.js';
@@ -17,7 +17,7 @@ async function context(guild: Guild, actorId: string, owner: boolean) {
   const canManage = me.permissions.has(permissions) && (!actor || actor.permissions.has(permissions));
   return {me,actor,channels,roles,canManage};
 }
-export function teamSpaceRoutes(access: ReturnType<typeof guildAuthorization>) {
+export function teamSpaceRoutes(access: ReturnType<typeof guildAuthorization>, dashboardOrigin?: string) {
   const router = Router({mergeParams:true}); router.use(access.requireAny);
   router.use(async (req,res,next)=>{
     const ctx = await context(req.managedGuild!,req.session.user!.id,req.guildAccess!.source==='bot-owner' || req.managedGuild!.ownerId===req.session.user!.id);
@@ -94,12 +94,12 @@ export function teamSpaceRoutes(access: ReturnType<typeof guildAuthorization>) {
     if(!space || space.version!==version(input.version) || space.locked) throw workflowError(409,'Actualiza el espacio antes de publicar.');
     if(space.summaryPending) throw workflowError(409,'El envio anterior no se confirmo. Revisa Discord antes de publicar de nuevo.');
     const destination=space.channels.find(row=>row.key==='notices')?.channelId,channel=destination?ctx.channels.get(destination):null;
-    if(!channel || channel.type!==ChannelType.GuildText || !privateChannel(channel as GuildChannel,space.roleIds,ctx.me.id) || !channel.permissionsFor(ctx.me)?.has([P.ViewChannel,P.SendMessages,P.ReadMessageHistory]) || (ctx.actor && !channel.permissionsFor(ctx.actor)?.has(P.ViewChannel))) throw workflowError(403,'El canal de avisos no esta disponible o sus permisos privados cambiaron.');
+    if(!channel || channel.type!==ChannelType.GuildText || !privateChannel(channel as GuildChannel,space.roleIds,ctx.me.id) || !channel.permissionsFor(ctx.me)?.has([P.ViewChannel,P.SendMessages,P.ReadMessageHistory,P.EmbedLinks]) || (ctx.actor && !channel.permissionsFor(ctx.actor)?.has(P.ViewChannel))) throw workflowError(403,'El canal de avisos no esta disponible o sus permisos privados cambiaron.');
     const locked=await TeamSpace.findOneAndUpdate({_id:space._id,locked:false,version:input.version},{$set:{locked:true},$inc:{version:1}},{new:true});if(!locked) throw workflowError(409,'Otra operacion esta en curso.');
     try {
       const filter={guildId:req.managedGuild!.id,state:{$ne:'closed'}};
       const [pending,unassigned]=await Promise.all([ModerationFollowup.countDocuments({...filter,reviewAt:{$lte:new Date()}}),ModerationFollowup.countDocuments({...filter,assigneeId:null})]);
-      const payload={content:withLanguage(req.managedGuild!.preferredLocale,()=>t('team.summary',{pending,unassigned})),allowedMentions:{parse:[] as never[]}};
+      const payload=teamSummaryLog({guildId:req.managedGuild!.id,pending,unassigned,actorId:req.session.user!.id,locale:req.managedGuild!.preferredLocale,dashboardOrigin});
       if(space.summaryMessageId) await channel.messages.edit(space.summaryMessageId,payload);
       else { await TeamSpace.updateOne({_id:space._id},{$set:{summaryPending:true}});const message=await channel.send(payload);await TeamSpace.updateOne({_id:space._id},{$set:{summaryMessageId:message.id,summaryPending:false}}); }
       res.json({ok:true});

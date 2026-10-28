@@ -11,7 +11,7 @@ import { serializeWorkItem } from '../../api/serialize.js';
 import { getSettings } from '../settings/service.js';
 import type { NotificationStatus } from '../../types/contracts.js';
 
-export function workflowRoutes({ bot, requireCapability }: { bot: Client; requireCapability: RequireCapability }) {
+export function workflowRoutes({ bot, requireCapability, dashboardOrigin }: { bot: Client; requireCapability: RequireCapability; dashboardOrigin?: string }) {
   const router = Router({ mergeParams: true });
   router.get('/', requireCapability('workflow.read'), async (req, res) => {
     const before = req.query.before;
@@ -35,7 +35,7 @@ export function workflowRoutes({ bot, requireCapability }: { bot: Client; requir
     try {
       const settings = await getSettings(routeParam(req, 'guildId'));
       notificationStatus = !settings.notifications.enabled ? 'disabled' :
-        await notifyChange(bot, { id: String(item._id), guildId: item.guildId, status: item.status, sourceChannelId: item.sourceChannelId }, settings.notifications.channelId) ? 'delivered' : 'failed';
+        await notifyChange(bot, { id: String(item._id), guildId: item.guildId, status: item.status, sourceChannelId: item.sourceChannelId }, settings.notifications.channelId, {actorId:req.session.user!.id,assigneeId:item.assigneeId,at:item.updatedAt,dashboardOrigin}) ? 'delivered' : 'failed';
     } catch { /* La respuesta distingue cambio persistido de aviso fallido. */ }
     res.json({ item: serializeWorkItem(item), notificationDelivered: notificationStatus === 'delivered', notificationStatus });
   });

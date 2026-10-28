@@ -134,3 +134,20 @@ Centro de control > Estado del bot consulta `GET /api/admin/resources` cada cinc
 En Linux lee consumo y cuotas de cgroups v2 o v1, incluidos limites mas estrictos de ancestros visibles. CPU se expresa en vCPU consumidas durante el intervalo entre muestras; la primera lectura no calcula uso de CPU. Memoria se expresa en bytes del contenedor e incluye procesos auxiliares y memoria contabilizada por el sistema. Sin contadores del contenedor se informa solo el proceso Node; sin cuota detectable no se inventan limites usando los recursos de la maquina anfitriona. Los limites detectados son los visibles para la instancia, no una consulta al plan o la facturacion de Render. Contrastar con el tipo de instancia y las metricas del servicio en Render.
 
 El porcentaje es consumo / limite * 100. El margen hasta el limite es max(0, limite - consumo). El objetivo recomendado es 80% del limite y el margen hasta ese objetivo es max(0, limite * 0.8 - consumo). Se muestra aviso desde 80% y estado critico desde 90%. Son referencias visuales: no aplican throttling, no paran canciones y no estiman cuantos servidores adicionales caben. No requiere nuevas variables de entorno.
+
+## Formato de logs HTTP
+
+`LOG_FORMAT=pretty` produce lineas legibles con evento, descripcion, metodo,
+ruta anonimizada, codigo HTTP, duracion y request ID. `LOG_FORMAT=json` conserva
+registros estructurados; si la variable falta se usa JSON. Los perfiles locales
+existentes se configuraron como pretty sin modificar sus credenciales.
+`REQUEST_LOGGING=false` desactiva estos registros.
+
+Las peticiones entrantes y sus respuestas comparten `requestId`, enviado tambien
+en X-Request-ID. Cada llamada HTTP externa tiene un `operationId` adicional para
+relacionar su inicio y fin dentro de la misma peticion. Los estados distinguen
+exito, redireccion, rechazo, fallo e interrupcion. En fetch, la duracion termina
+al recibir las cabeceras; no mide la descarga completa del cuerpo.
+No se imprimen cuerpos, cookies, autorizacion, consultas ni tokens de Discord.
+Las rutas de seguimiento y espacio del equipo se reconocen sin mostrar IDs.
+Reinicia el backend para cargar cambios de configuracion y codigo.

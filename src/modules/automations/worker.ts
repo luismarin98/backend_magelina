@@ -1,3 +1,4 @@
+import { automationLog } from '../../discord/log-messages.js';
 import { randomUUID } from 'node:crypto';
 import { logRecord } from '../../observability/logging.js';
 import type { Client } from 'discord.js';
@@ -92,7 +93,7 @@ export function startAutomationWorker(bot: Client) {
   const worker = createAutomationWorker({ isReady: () => bot.isReady(), send: async (guildId, channelId, content) => {
     const channel = await bot.channels.fetch(channelId);
     if (!channel?.isSendable() || !('guildId' in channel) || channel.guildId !== guildId) throw new Error('Channel unavailable');
-    await channel.send({ content, allowedMentions: { parse: [] } });
+    await channel.send(automationLog(content,'guild' in channel ? channel.guild.preferredLocale : undefined));
   } });
   const timer = setInterval(() => { void worker.tick(); }, 15000); timer.unref(); void worker.tick();
   return async () => { clearInterval(timer); await worker.stop(); };
