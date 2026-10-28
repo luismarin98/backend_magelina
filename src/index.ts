@@ -1,3 +1,4 @@
+import { TeamSpace } from './database/models/TeamSpace.js';
 import { ModerationFollowup } from './database/models/ModerationFollowup.js';
 import { getMusicService } from './modules/music/service.js';
 import { ModerationCase } from './database/models/ModerationCase.js';
@@ -73,6 +74,7 @@ try {
   await GuildRoleBinding.init();
   await ModerationCase.init();
   await ModerationFollowup.init();
+  await TeamSpace.init();
   await Promise.all([Project.init(), CollaborationProfile.init(), Mentorship.init(), AutomationRule.init(), AutomationJob.init(), BotControl.init(), SystemEvent.init()]);
   startupStage = 'discord';
   if (!stopping) await bot.login(config.discordToken);

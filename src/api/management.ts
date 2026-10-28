@@ -1,3 +1,4 @@
+import { teamSpaceRoutes } from '../modules/moderation/team-space.js';
 import { musicRoutes } from '../modules/music/routes.js';
 import { getMusicService } from '../modules/music/service.js';
 import { moderationRoutes } from '../modules/moderation/routes.js';
@@ -46,6 +47,7 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   router.use('/guilds/:guildId/audit-logs', auditRoutes(access.requireCapability));
 
   router.use('/guilds/:guildId/music', musicRoutes(access.requireCapability, getMusicService(bot, config.audiusApiKey)));
+  router.use('/guilds/:guildId/team-space', teamSpaceRoutes(access));
   router.use('/guilds/:guildId/moderation', moderationRoutes(access));
   router.use('/guilds/:guildId/permissions', permissionRoutes(requireGuildManager));
   router.get('/guilds/:guildId/access', access.requireMember, async (req, res) => {
