@@ -24,9 +24,11 @@ import { workflowRoutes } from '../modules/workflow/routes.js';
 import { knowledgeRoutes } from '../modules/knowledge/routes.js';
 import { settingsRoutes } from '../modules/settings/routes.js';
 
-import { serializeBot, serializeGuild } from '../discord/images.js';
+import { serializeBot } from '../discord/images.js';
 import { userIdentities } from '../discord/user-identities.js';
 import { commandCatalog } from '../bot/catalog.js';
+import { listBotGuilds } from '../discord/bot-guilds.js';
+import { adminGuildRoutes } from './admin-guilds.js';
 
 export function managementRoutes({ bot, config }: ManagementDependencies) {
   const router = Router();
@@ -67,6 +69,7 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
     }
     next();
   });
+  router.use('/admin/guilds', adminGuildRoutes(bot));
   router.use('/admin/operations', operationRoutes(config));
   router.get('/admin/resources', async (_req, res) => {
     res.set('Cache-Control', 'no-store').json(await getResourceUsage());
@@ -74,12 +77,13 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   router.get('/admin/users', identities);
   router.use('/admin/commands', commandRoutes(config, undefined, bot));
   router.get('/admin/overview', async (_req, res) => {
+    const guilds = await listBotGuilds(bot);
     const storage = await getDatabaseStorage();
     res.set('Cache-Control', 'no-store').json({
       bot: { ...serializeBot(bot.user), ready: bot.isReady(), name: bot.user?.username ?? null, uptimeMs: bot.uptime ?? 0 },
       database: { ready: isDatabaseReady(), storage },
-      guildCount: bot.guilds.cache.size,
-      guilds: [...bot.guilds.cache.values()].map(serializeGuild),
+      guildCount: guilds.length,
+      guilds,
     });
   });
   return router;

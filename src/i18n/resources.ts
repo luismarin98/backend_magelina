@@ -1,4 +1,6 @@
 export const english = {
+  "Magelina no tiene acceso a este servidor. Un administrador debe añadir el bot al servidor; añadir la aplicación a tu cuenta no es suficiente.": "Magelina cannot access this server. An administrator must add the bot to the server; adding the app to your account is not enough.",
+  "No se pudo consultar el servidor en Discord. Inténtalo de nuevo en unos momentos.": "Could not retrieve the server from Discord. Please try again in a moment.",
   "Reproductor actualizado. Consulta /musica cola o el dashboard.": "Player updated. Check /musica cola or the dashboard.",
   "Sin canci\u00f3n": "No song",
   "Entra primero en un canal de voz.": "Join a voice channel first.",

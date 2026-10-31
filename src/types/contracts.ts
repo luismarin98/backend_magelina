@@ -8,6 +8,14 @@ export interface BotIdentityResponse { bot: BotIdentity | null }
 export interface SessionUser { id: string; username: string; name: string; avatar?: DiscordImage | null; avatarDecorationUrl?: string | null }
 export interface SessionResponse { user: SessionUser; role: GlobalRole }
 export interface GuildSummary { id: string; name: string; icon?: DiscordImage | null; banner?: DiscordImage | null }
+export interface AdminGuildDetails extends GuildSummary {
+  description: string | null;
+  ownerId: string;
+  preferredLocale: string;
+  createdAt: string;
+  memberCount: number | null;
+  onlineCount: number | null;
+}
 export interface ManagedGuild extends GuildSummary { botInstalled: boolean }
 export interface GuildsResponse { guilds: ManagedGuild[] }
 export type RoleKind = 'administrator' | 'moderator' | 'coordinator' | 'collaborator' | 'reader' | 'custom';

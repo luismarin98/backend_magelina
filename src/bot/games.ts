@@ -1,3 +1,4 @@
+import { interactionGuild } from './guild.js';
 import { subcommands } from './commands/entertainment/index.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, PermissionFlagsBits as P, type Interaction, type ChatInputCommandInteraction, type ButtonInteraction } from 'discord.js';
 import { PanelSessions } from './panel-sessions.js';
@@ -46,10 +47,10 @@ export function gameView(game: Game, token: string) {
 }
 
 async function authorize(i: ChatInputCommandInteraction | ButtonInteraction) {
-  if (!i.guild) throw workflowError(400, 'Los juegos están disponibles dentro de los servidores.');
-  await assertAvailable(i.guild.id);
-  const member = await i.guild.members.fetch({ user: i.user.id, force: true });
-  const channel = await i.guild.channels.fetch(i.channelId);
+  const guild = await interactionGuild(i);
+  await assertAvailable(guild.id);
+  const member = await guild.members.fetch({ user: i.user.id, force: true });
+  const channel = await guild.channels.fetch(i.channelId);
   if (!channel || !('permissionsFor' in channel) || !channel.permissionsFor(member)?.has([P.ViewChannel, P.UseApplicationCommands])) throw workflowError(403, 'Necesitas acceso al canal y permiso para usar comandos de aplicaciones.');
 }
 

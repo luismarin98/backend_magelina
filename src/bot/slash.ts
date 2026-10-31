@@ -1,3 +1,4 @@
+import { interactionGuild } from './guild.js';
 import { t } from '../i18n/index.js';
 import { MessageFlags, type Interaction } from 'discord.js';
 import type { Config } from '../config/env.js';
@@ -10,16 +11,23 @@ import { workflowError } from '../modules/workflow/rules.js';
 import { logRecord } from '../observability/logging.js';
 import { executeCommunity } from './commands/community/index.js';
 import { executeMusic } from './commands/music/index.js';
+import { execute as executeHelp } from './commands/community/ayuda.js';
 
 export async function handleSlash(interaction: Interaction, config: Pick<Config, 'ownerIds' | 'dashboardOrigin'>) {
   if (!interaction.isChatInputCommand() || !['magelina', 'musica'].includes(interaction.commandName)) return;
   const i = interaction;
   try {
-    await i.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!i.guild) throw workflowError(400, t("Esta funci\u00f3n solo est\u00e1 disponible en servidores."));
-    const { member, access } = await commandAccess(i, config);
     const command = i.options.getSubcommand();
-    await assertAvailable(i.guild.id, undefined, command === 'solicitud' || (interaction.commandName === 'musica' && !['buscar', 'cola'].includes(command)));
+    const help = i.commandName === 'magelina' && command === 'ayuda';
+    await i.deferReply(help && i.guildId ? {} : { flags: MessageFlags.Ephemeral });
+    // The public command catalog needs no bot membership or community data.
+    if (help) {
+      await executeHelp({ i });
+      return;
+    }
+    const guild = await interactionGuild(i);
+    const { member, access } = await commandAccess(i, config);
+    await assertAvailable(guild.id, undefined, command === 'solicitud' || (interaction.commandName === 'musica' && !['buscar', 'cola'].includes(command)));
     const requireCapability = (capability: Capability) => {
       if (!access.capabilities.includes(capability)) throw workflowError(403, t("No tienes permiso para utilizar esta funci\u00f3n."));
     };

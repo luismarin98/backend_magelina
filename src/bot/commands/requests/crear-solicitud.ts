@@ -1,3 +1,4 @@
+import { interactionGuild } from '../../guild.js';
 import type { Interaction } from 'discord.js';
 import {
   ActionRowBuilder, ApplicationCommandType, ContextMenuCommandBuilder, MessageFlags,
@@ -28,7 +29,7 @@ export async function handleWorkflow(interaction: Interaction) {
     const match = /^request:(\d{17,20}):(\d{17,20})$/.exec(interaction.customId);
     if (!match || match[1] !== interaction.channelId) throw new Error('Invalid source');
     const channel = await interaction.client.channels.fetch(match[1]);
-    const guild = interaction.client.guilds.cache.get(interaction.guildId);
+    const guild = await interactionGuild(interaction);
     const member = await guild!.members.fetch({ user: interaction.user.id, force: true });
     if (!channel?.isTextBased() || !('guildId' in channel) || channel.guildId !== interaction.guildId ||
         !channel.permissionsFor(member)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory])) {

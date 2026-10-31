@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { ChannelType, type Interaction } from 'discord.js';
+import { ChannelType, MessageFlags, type Interaction } from 'discord.js';
 import { PanelSessions } from '../src/bot/panel-sessions.js';
 import { handleInteractive, helpPanel, musicSearchPanel } from '../src/bot/interactive.js';
 import { GuildPolicy } from '../src/database/models/GuildPolicy.js';
@@ -61,6 +61,27 @@ test('help categories update the panel and a different actor cannot edit it', as
   const payload = own.edits[0] as ReturnType<typeof helpPanel>;
   assert.match(payload.embeds[0]!.toJSON().description!, /\/musica buscar/);
   assert.deepEqual(payload.allowedMentions, { parse: [] });
+});
+
+test('public help menus work without bot access and remain bound to actor and server', async () => {
+  const panel = helpPanel(userId, guildId);
+  const id = panel.components[0]!.toJSON().components[0]!.custom_id!;
+  for (const category of ['start', 'community', 'music', 'games', 'messages']) {
+    const own = selection(id, category);
+    Object.assign(own.i, { guild: null, client: {} });
+    await handleInteractive(own.i, config);
+    assert.equal(own.replies.length, 0);
+    assert.equal(own.edits.length, 1);
+    assert.ok('embeds' in (own.edits[0] as object));
+  }
+  for (const fields of [{ user: { id: 'another' } }, { guildId: '100000000000000099' }, { values: ['forged'] }]) {
+    const rejected = selection(id, 'music');
+    Object.assign(rejected.i, { guild: null, client: {}, ...fields });
+    await handleInteractive(rejected.i, config);
+    assert.equal(rejected.edits.length, 0);
+    assert.equal(rejected.replies.length, 1);
+    assert.equal((rejected.replies[0] as { flags: number }).flags, MessageFlags.Ephemeral);
+  }
 });
 
 test('music menus enforce fresh authority, voice membership and single consumption', async t => {

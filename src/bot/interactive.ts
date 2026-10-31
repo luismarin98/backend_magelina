@@ -1,3 +1,4 @@
+import { interactionGuild } from './guild.js';
 import { t } from '../i18n/index.js';
 import { ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder, MessageFlags, ChannelType, PermissionFlagsBits as P, escapeMarkdown, type Interaction, type Client } from 'discord.js';
 import type { Config } from '../config/env.js';
@@ -49,35 +50,35 @@ export async function handleInteractive(interaction: Interaction, config: Pick<C
   if (!interaction.isStringSelectMenu() || !interaction.customId.startsWith('mgl:')) return;
   const i = interaction;
   try {
-    if (!i.guild) throw workflowError(400, t("Este men\u00fa solo funciona en un servidor."));
     const token = i.customId.slice(4);
-    const panel = panels.get(token, i.user.id, i.guild.id);
+    const panel = panels.get(token, i.user.id, i.guildId ?? '');
     const selected = i.values.length === 1 ? i.values[0] : undefined;
     if (panel.kind === 'help' && !categories.some(category => category.value === selected)) throw workflowError(400, t("Categor\u00eda no v\u00e1lida."));
-    if (panel.kind === 'music' && !panel.tracks.some(track => track.id === selected)) throw workflowError(400, t("Selecciona una canci\u00f3n de este men\u00fa."));
-    // Claim before awaiting: a concurrent click receives its own private error,
-    // without modifying this panel or submitting a second queue operation.
-    if (panel.kind === 'music') panels.take(token, i.user.id, i.guild.id);
-    await i.deferUpdate();
-    await assertAvailable(i.guild.id, undefined, panel.kind === 'music');
     if (panel.kind === 'help') {
-      await commandAccess(i, config);
+      await i.deferUpdate();
       await i.editReply(helpView(token, selected));
       return;
     }
-    await requireModule(i.guild.id, 'music');
+    const guild = await interactionGuild(i);
+    if (panel.kind === 'music' && !panel.tracks.some(track => track.id === selected)) throw workflowError(400, t("Selecciona una canci\u00f3n de este men\u00fa."));
+    // Claim before awaiting: a concurrent click receives its own private error,
+    // without modifying this panel or submitting a second queue operation.
+    if (panel.kind === 'music') panels.take(token, i.user.id, guild.id);
+    await i.deferUpdate();
+    await assertAvailable(guild.id, undefined, panel.kind === 'music');
+    await requireModule(guild.id, 'music');
     const { access } = await commandAccess(i, config);
     if (!access.capabilities.includes('music.request')) throw workflowError(403, t("Ya no tienes permiso para solicitar canciones."));
     const service = musicFor(i.client);
-    const state = service.snapshot(i.guild.id);
-    await service.enqueue(i.guild.id, selected!, i.user.id, state.version, async channelId => {
+    const state = service.snapshot(guild.id);
+    await service.enqueue(guild.id, selected!, i.user.id, state.version, async channelId => {
       const fresh = await commandAccess(i, config);
       if (!fresh.access.capabilities.includes('music.request')) throw workflowError(403, t("Tus permisos del reproductor cambiaron."));
-      await assertAvailable(i.guild!.id);
-      const channel = channelId ? await i.guild!.channels.fetch(channelId) : null;
+      await assertAvailable(guild.id);
+      const channel = channelId ? await guild.channels.fetch(channelId) : null;
       if (!channel || channel.type !== ChannelType.GuildVoice) throw workflowError(400, t("Conecta primero a Magelina con /musica conectar y vuelve a buscar."));
       if (!channel.permissionsFor(fresh.member)?.has([P.ViewChannel, P.Connect]) || (!fresh.access.canConfigure && fresh.member.voice.channelId !== channel.id)) throw workflowError(403, t("Debes tener acceso y estar en el mismo canal de voz."));
-      const me = await i.guild!.members.fetchMe({ force: true });
+      const me = await guild.members.fetchMe({ force: true });
       if (!channel.permissionsFor(me)?.has([P.ViewChannel, P.Connect, P.Speak])) throw workflowError(403, t("Magelina necesita Ver canal, Conectar y Hablar."));
     });
     await i.editReply({ content: t("Canci\u00f3n a\u00f1adida a la cola. Consulta /musica cola para ver la reproducci\u00f3n."), embeds: [], components: [], allowedMentions: { parse: [] } });

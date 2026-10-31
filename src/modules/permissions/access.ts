@@ -10,6 +10,7 @@ import { workflowError } from '../workflow/rules.js';
 import { hasCode } from '../../types/errors.js';
 import type { Config } from '../../config/env.js';
 import { serializeGuild } from '../../discord/images.js';
+import { listBotGuilds } from '../../discord/bot-guilds.js';
 
 export type RequireCapability = (capability: Capability) => RequestHandler;
 
@@ -18,9 +19,14 @@ export function guildAuthorization(bot: Client, config: Pick<Config, 'ownerIds'>
     const guildId = routeParam(req, 'guildId');
     if (!/^\d{17,20}$/.test(guildId)) throw workflowError(400, 'ID de servidor no valido.');
     const owner = config.ownerIds.includes(req.session.user!.id);
-    const guild = bot.guilds.cache.get(guildId);
+    let guild = bot.guilds.cache.get(guildId);
     if (owner) {
-      if (!guild) throw workflowError(404, 'El bot no esta en este servidor.');
+      if (!guild) {
+        guild = await bot.guilds.fetch(guildId).catch((error: unknown) => {
+          if (hasCode(error, 10004) || hasCode(error, 50001)) throw workflowError(404, 'El bot no esta en este servidor.');
+          throw workflowError(502, 'No se pudo verificar el acceso del bot a este servidor.');
+        });
+      }
       // El propietario puede inspeccionar una comunidad bloqueada, pero no saltarse las pausas de escritura.
       if (!['GET', 'HEAD'].includes(req.method)) await assertAvailable(guildId);
       req.managedGuild = guild;
@@ -46,7 +52,7 @@ export function guildAuthorization(bot: Client, config: Pick<Config, 'ownerIds'>
     req.managedGuild = guild; req.guildAccess = { ...access, source: access.canConfigure ? 'guild-owner' : 'delegated' }; next();
   };
   async function listGuilds(token: string, userId: string): Promise<ManagedGuild[]> {
-    if (config.ownerIds.includes(userId)) return [...bot.guilds.cache.values()].map((guild) => ({ ...serializeGuild(guild), botInstalled: true }));
+    if (config.ownerIds.includes(userId)) return (await listBotGuilds(bot)).map(guild => ({ ...guild, botInstalled: true }));
     const guilds = await listDiscordGuilds(token);
     const visible: ManagedGuild[] = [];
     const controls = await getControls();

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import session from 'express-session';
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import type { AddressInfo } from 'node:net';
 import { guildAuthorization } from '../src/modules/permissions/access.js';
 import { capabilities, emptyGrants, resolveAccess } from '../src/modules/permissions/rules.js';
@@ -22,8 +22,14 @@ test('solo el owner global recibe todas las capacidades sin permisos locales', (
 test('HTTP: owner global ve comunidades y pantallas; otros roles no pueden escalar acceso', async (t) => {
   const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
   const guild = { id: guildId, name: 'Comunidad del bot' };
+  const uncachedGuild = { id: '100000000000000006', name: 'Otra comunidad' };
   t.mock.method(bot.guilds.cache, 'get', (id: string) => id === guildId ? guild : undefined);
   t.mock.method(bot.guilds.cache, 'values', () => [guild].values());
+  t.mock.method(bot.guilds, 'fetch', (async (options: unknown) => {
+    if (options === uncachedGuild.id) return uncachedGuild;
+    if (typeof options === 'string') throw Object.assign(new Error('Unknown guild'), { code: 10004 });
+    return new Collection([[guildId, guild], [uncachedGuild.id, uncachedGuild]]);
+  }) as never);
   let blocked = false; let discordPermissions = '0';
   let guildOwnerId = '100000000000000004', roleIds: string[] = [], memberPresent = true;
   const grants = emptyGrants();
@@ -59,7 +65,8 @@ test('HTTP: owner global ve comunidades y pantallas; otros roles no pueden escal
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try {
     const list = await globalThis.fetch(`${base}/guilds`);
-    assert.deepEqual(await list.json(), [{ ...guild, icon: null, banner: null, botInstalled: true }]);
+    assert.deepEqual(await list.json(), [guild, uncachedGuild].map(guild => ({ ...guild, icon: null, banner: null, botInstalled: true })));
+    assert.equal((await globalThis.fetch(`${base}/guilds/${uncachedGuild.id}/settings`)).status, 200);
     const owner = await globalThis.fetch(`${base}/guilds/${guildId}/access`);
     assert.equal(owner.status, 200);
     assert.deepEqual(await owner.json(), { canConfigure: true, canManageRoles: true, canModerate: true, capabilities, source: 'bot-owner' });
