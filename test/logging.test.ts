@@ -3,7 +3,42 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import { REST } from 'discord.js';
-import { logRecord, observedFetch, observeDiscordRest, requestLogging, safeRoute, requestOutcome, formatLog } from '../src/observability/logging.js';
+import { logRecord, observedFetch, observeDiscordRest, requestLogging, safeRoute, requestOutcome, formatLog, safeBody } from '../src/observability/logging.js';
+
+test('body sanitization redacts nested credentials and bounds large or circular payloads', () => {
+  const body: Record<string, unknown> = { name: 'Magelina', nested: { access_token: 'private-token', password: 'private-password', apiKey: 'private-key' }, text: 'x'.repeat(10000) };
+  body.self = body;
+  const output = JSON.stringify(safeBody(body));
+  assert.ok(output.includes('Magelina'));
+  assert.ok(output.includes('[Redacted]'));
+  assert.ok(output.includes('[Truncated]'));
+  assert.ok(!output.includes('private-'));
+  assert.ok(output.length < 10000);
+});
+
+test('API logs include sanitized JSON request and response bodies without changing the response', async t => {
+  const records = capture(t);
+  const previous = process.env.REQUEST_LOG_BODIES;
+  delete process.env.REQUEST_LOG_BODIES;
+  t.after(() => { if (previous === undefined) delete process.env.REQUEST_LOG_BODIES; else process.env.REQUEST_LOG_BODIES = previous; });
+  const app = express(); app.use(requestLogging); app.use(express.json());
+  app.post('/api/projects', (_req, res) => { res.status(201).json({ name: 'Magelina', token: 'private-response' }); });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects`;
+  const send = () => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Magelina', password: 'private-request' }) });
+  const response = await send();
+  assert.deepEqual(await response.json(), { name: 'Magelina', token: 'private-response' });
+  const end = JSON.parse(records.at(-1)!);
+  assert.deepEqual(end.requestBody, { name: 'Magelina', password: '[Redacted]' });
+  assert.deepEqual(end.responseBody, { name: 'Magelina', token: '[Redacted]' });
+  assert.ok(!records.join('').includes('private-'));
+  process.env.REQUEST_LOG_BODIES = 'false';
+  await (await send()).text();
+  assert.ok(!('requestBody' in JSON.parse(records.at(-1)!)));
+  assert.ok(!('responseBody' in JSON.parse(records.at(-1)!)));
+});
 
 function capture(t: test.TestContext) {
   const previous = process.env.REQUEST_LOGGING;

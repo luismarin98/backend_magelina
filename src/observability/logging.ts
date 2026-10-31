@@ -6,7 +6,7 @@ import { REST, RESTEvents } from 'discord.js';
 
 const context = new AsyncLocalStorage<{ requestId: string }>();
 const segments = new Set('api v10 v1 auth discord callback logout me users @me guilds channels members roles messages applications commands interactions webhooks oauth2 token gateway bot work-items knowledge projects collaboration automations audit-logs music search connect queue control settings access permissions admin overview operations jobs retry targets sync unpublish health ready profiles mentorships cases moderation tracks stream team-space prepare summary followups catalog resources type apply-template youtube enable voices'.split(' '));
-/** Logs never include query strings, credentials, request bodies or arbitrary path segments. */
+/** Routes never include query strings, credentials or arbitrary path segments. */
 export function safeRoute(value: string): string {
   let pathname: string;
   try { pathname = new URL(value, 'https://redacted.invalid').pathname; } catch { return '/:invalid'; }
@@ -44,15 +44,54 @@ export function logRecord(event: string, fields: Fields = {}) {
   if (level === 'error') console.error(output); else if (level === 'warn') console.warn(output); else console.info(output);
 }
 export function traceOperation<T>(operation: () => T): T { return context.run({ requestId: randomUUID() }, operation); }
+interface Fields { requestBody?: unknown; responseBody?: unknown }
+
+// Bound both traversal and output, and remove credentials before serialization.
+export function safeBody(value: unknown): unknown {
+  let remaining = 4096;
+  const visit = (item: unknown, depth: number): unknown => {
+    if (remaining <= 0) return '[Truncated]';
+    if (item === null || typeof item === 'boolean' || typeof item === 'number') { remaining -= 16; return item; }
+    if (typeof item === 'string') {
+      const length = Math.min(remaining, 1024);
+      remaining -= Math.min(item.length, length);
+      return item.length > length ? item.slice(0, length) + '[Truncated]' : item;
+    }
+    if (typeof item !== 'object') return undefined;
+    if (Buffer.isBuffer(item)) return '[Binary omitted]';
+    if (depth >= 5) return '[Truncated]';
+    if (Array.isArray(item)) return item.slice(0, 25).map(child => visit(child, depth + 1));
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(item).slice(0, 40)) {
+      if (remaining <= 0) { result._truncated = true; break; }
+      remaining -= key.length;
+      result[key.slice(0, 128)] = /token|secret|password|passwd|authorization|cookie|session|api.?key|credential|^code$|^state$/i.test(key)
+        ? '[Redacted]' : visit(child, depth + 1);
+    }
+    return result;
+  };
+  return visit(value, 0);
+}
 const elapsed = (start: number) => Math.round((performance.now() - start) * 10) / 10;
 export const requestLogging: RequestHandler = (req, res, next) => {
   traceOperation(() => {
     const start = performance.now(), requestId = context.getStore()!.requestId;
     const fields = { requestId, method: req.method, route: safeRoute(req.originalUrl) };
+    const includeBodies = process.env.REQUEST_LOGGING !== 'false' && process.env.REQUEST_LOG_BODIES !== 'false'
+      && !/^\/api\/auth(?:\/|$)/.test(req.path);
+    let responseBody: unknown;
+    if (includeBodies) {
+      const json = res.json;
+      res.json = function (body) {
+        responseBody = safeBody(body);
+        return json.call(this, body);
+      };
+    }
     res.setHeader('X-Request-ID', requestId);
     logRecord('http.in.start', fields);
     let finished = false;
-    res.once('finish', () => { finished = true; logRecord('http.in.end', { ...fields, status: res.statusCode, durationMs: elapsed(start), outcome: requestOutcome(res.statusCode) }); });
+    res.once('finish', () => { finished = true; logRecord('http.in.end', { ...fields, status: res.statusCode, durationMs: elapsed(start), outcome: requestOutcome(res.statusCode),
+      ...(includeBodies ? { requestBody: safeBody(req.body), responseBody } : {}) }); });
     res.once('close', () => { if (!finished) logRecord('http.in.end', { ...fields, durationMs: elapsed(start), outcome: 'aborted' }); });
     next();
   });

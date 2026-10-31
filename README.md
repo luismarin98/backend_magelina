@@ -143,6 +143,17 @@ registros estructurados; si la variable falta se usa JSON. Los perfiles locales
 existentes se configuraron como pretty sin modificar sus credenciales.
 `REQUEST_LOGGING=false` desactiva estos registros.
 
+Los eventos `http.in.end` incluyen `requestBody` y `responseBody` para las
+peticiones de la API y sus respuestas JSON. Se ocultan campos de credenciales
+(tokens, passwords, cookies, sesiones, secretos y API keys). Las rutas
+`/api/auth` omiten los cuerpos. No se registran headers ni query strings.
+El contenido se limita en longitud, profundidad y cantidad de elementos;
+las respuestas HTML, binarias y streams no se capturan.
+`REQUEST_LOG_BODIES=false` permite conservar solo los metadatos HTTP.
+Los cuerpos pueden contener datos de negocio; aplica la misma restriccion
+de acceso a los logs que a la API. Las llamadas salientes conservan sus
+registros de metodo, ruta, estado y duracion sin incluir cuerpos.
+
 Las peticiones entrantes y sus respuestas comparten `requestId`, enviado tambien
 en X-Request-ID. Cada llamada HTTP externa tiene un `operationId` adicional para
 relacionar su inicio y fin dentro de la misma peticion. Los estados distinguen
