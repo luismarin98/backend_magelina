@@ -22,8 +22,8 @@ NODE_ENV=production
 PORT=3000
 BIND_HOST=127.0.0.1
 TRUST_PROXY=true
-DASHBOARD_ORIGIN=https://magelina-five.vercel.app
-DISCORD_REDIRECT_URI=https://magelina-five.vercel.app/api/auth/discord/callback
+DASHBOARD_ORIGIN=https://magelina.vercel.app
+DISCORD_REDIRECT_URI=https://magelina.vercel.app/api/auth/discord/callback
 YOUTUBE_EXPERIMENTAL=true
 YTDLP_PATH=.tools/yt-dlp.exe
 ```
@@ -61,7 +61,7 @@ node scripts/use-pc-backend.mjs https://EQUIPO.RED.ts.net
 
 Este comando verifica `/api/ready`, la redireccion inicial hacia Discord y la cookie Secure/HttpOnly y muestra el valor de `BACKEND_ORIGIN` que debes configurar en Vercel. No modifica archivos, no despliega ni hace commits. `dashboard_magelina/vercel.mjs` usa esa variable y conserva la regla de React a `/index.html`. Si la comprobacion de cookie falla, revisar como el proxy comunica HTTPS; no quitar Secure.
 
-5. Configurar `BACKEND_ORIGIN` con el origen HTTPS de Funnel en Vercel y desplegar el frontend. Mantener `VITE_API_URL` sin definir y el callback registrado en Discord exactamente en `https://magelina-five.vercel.app/api/auth/discord/callback`.
+5. Configurar `BACKEND_ORIGIN` con el origen HTTPS de Funnel en Vercel y desplegar el frontend. Mantener `VITE_API_URL` sin definir y el callback registrado en Discord exactamente en `https://magelina.vercel.app/api/auth/discord/callback`.
 6. Verificar desde Vercel: `/api/ready` devuelve `ready`, iniciar sesion, confirmar `/api/auth/me` con 200, entrar a una comunidad, conectar a voz y reproducir una cancion. Comprobar una cuenta sin permisos administrativos. Revisar que no haya cortes con la PC en uso normal.
 
 ## Operacion y vuelta a Render

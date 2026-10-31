@@ -36,8 +36,8 @@ async function prepare() {
   const settings = [
     '# Perfil de alojamiento en PC. No subir este archivo al repositorio.',
     'NODE_ENV=production', 'PORT=3000', 'BIND_HOST=127.0.0.1', 'TRUST_PROXY=true',
-    'DASHBOARD_ORIGIN=https://magelina-five.vercel.app',
-    'DISCORD_REDIRECT_URI=https://magelina-five.vercel.app/api/auth/discord/callback',
+    'DASHBOARD_ORIGIN=https://magelina.vercel.app',
+    'DISCORD_REDIRECT_URI=https://magelina.vercel.app/api/auth/discord/callback',
     'YOUTUBE_EXPERIMENTAL=true', 'YTDLP_PATH=.tools/yt-dlp.exe',
   ];
   await writeFile(envPath, `${original}\n\n${settings.join('\n')}\n`, { flag: 'wx', mode: 0o600 });
@@ -49,8 +49,8 @@ async function check(requireTunnel = true) {
   const { readConfig } = await import('../dist/config/env.js');
   const config = readConfig(env);
   if (!config.production || !config.trustProxy || config.bindHost !== '127.0.0.1' || config.port !== 3000 ||
-      config.dashboardOrigin !== 'https://magelina-five.vercel.app' ||
-      config.discordRedirectUri !== 'https://magelina-five.vercel.app/api/auth/discord/callback') {
+      config.dashboardOrigin !== 'https://magelina.vercel.app' ||
+      config.discordRedirectUri !== 'https://magelina.vercel.app/api/auth/discord/callback') {
     throw new Error('El perfil de PC debe usar produccion, proxy, 127.0.0.1:3000 y las URLs de Vercel indicadas en HOSTING-PC.md.');
   }
   const extractor = resolve(root, env.YTDLP_PATH || '.tools/yt-dlp.exe');
