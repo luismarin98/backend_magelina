@@ -22,17 +22,17 @@ test('API logs include sanitized JSON request and response bodies without changi
   delete process.env.REQUEST_LOG_BODIES;
   t.after(() => { if (previous === undefined) delete process.env.REQUEST_LOG_BODIES; else process.env.REQUEST_LOG_BODIES = previous; });
   const app = express(); app.use(requestLogging); app.use(express.json());
-  app.post('/api/projects', (_req, res) => { res.status(201).json({ name: 'Magelina', token: 'private-response' }); });
+  app.post('/api/projects', (_req, res) => { res.status(201).json({ name: 'Magelina', token: 'private-response', createdAt: new Date('2026-10-30T00:00:00Z') }); });
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects`;
   const send = () => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Magelina', password: 'private-request' }) });
   const response = await send();
-  assert.deepEqual(await response.json(), { name: 'Magelina', token: 'private-response' });
+  assert.deepEqual(await response.json(), { name: 'Magelina', token: 'private-response', createdAt: '2026-10-30T00:00:00.000Z' });
   const end = JSON.parse(records.at(-1)!);
   assert.deepEqual(end.requestBody, { name: 'Magelina', password: '[Redacted]' });
-  assert.deepEqual(end.responseBody, { name: 'Magelina', token: '[Redacted]' });
+  assert.deepEqual(end.responseBody, { name: 'Magelina', token: '[Redacted]', createdAt: '2026-10-30T00:00:00.000Z' });
   assert.ok(!records.join('').includes('private-'));
   process.env.REQUEST_LOG_BODIES = 'false';
   await (await send()).text();
@@ -111,6 +111,13 @@ test('HTTP results distinguish redirects, rejection and server failure',()=>{
 test('readable output includes endpoint, status, duration and correlation',()=>{
  const line=formatLog({time:'2026-10-27T22:00:00Z',level:'warn',event:'http.in.end',message:'Peticion rechazada',method:'POST',route:'/api/guilds/:id/team-space/prepare',status:403,statusLabel:'Forbidden',durationMs:12.5,requestId:'request-test'});
  assert.ok(line.includes('Peticion rechazada'));assert.ok(line.includes('HTTP 403 Forbidden'));assert.ok(line.includes('12.5 ms'));assert.ok(line.includes('request=request-test'));
+});
+
+test('readable output prints actual request and response JSON in indented blocks', () => {
+  const line = formatLog({ level: 'info', event: 'http.in.end', requestBody: { name: 'Magelina' }, responseBody: { ok: true, data: [1, 2] } });
+  assert.ok(line.includes('REQUEST JSON:\n{\n  "name": "Magelina"\n}'));
+  assert.ok(line.includes('RESPONSE JSON:\n{\n  "ok": true,\n  "data": [\n    1,\n    2\n  ]\n}'));
+  assert.ok(formatLog({ level: 'info', requestBody: undefined }).includes('REQUEST JSON:\nnull'));
 });
 test('JSON logs include a readable explanation and outgoing operation correlation',async t=>{
  const records=capture(t);t.mock.method(globalThis,'fetch',async()=>new Response('{}',{status:403}));

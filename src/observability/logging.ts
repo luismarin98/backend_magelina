@@ -31,9 +31,13 @@ export function formatLog(record: Record<string, unknown>): string {
   const status = typeof record.status === 'number' ? `HTTP ${record.status} ${record.statusLabel ?? ''}`.trim() : '';
   const timing = typeof record.durationMs === 'number' ? `${record.durationMs} ms` : '';
   const context = [record.requestId ? `request=${record.requestId}` : '', record.operationId ? `operation=${record.operationId}` : ''].filter(Boolean).join(' ');
-  const known = new Set(['time','level','event','message','method','route','status','statusLabel','durationMs','requestId','operationId','service','outcome']);
+  const known = new Set(['time','level','event','message','method','route','status','statusLabel','durationMs','requestId','operationId','service','outcome','requestBody','responseBody']);
   const extra = Object.fromEntries(Object.entries(record).filter(([key])=>!known.has(key)));
-  return [record.time, String(record.level).toUpperCase(), record.service ?? 'backend', record.event, record.message, endpoint, status, timing, context, Object.keys(extra).length ? JSON.stringify(extra) : ''].filter(Boolean).join(' | ');
+  const summary = [record.time, String(record.level).toUpperCase(), record.service ?? 'backend', record.event, record.message, endpoint, status, timing, context, Object.keys(extra).length ? JSON.stringify(extra) : ''].filter(Boolean).join(' | ');
+  const bodies = (['requestBody', 'responseBody'] as const)
+    .filter(key => key in record)
+    .map(key => `${key === 'requestBody' ? 'REQUEST JSON' : 'RESPONSE JSON'}:\n${JSON.stringify(record[key] ?? null, null, 2)}`);
+  return [summary, ...bodies].join('\n');
 }
 export function logRecord(event: string, fields: Fields = {}) {
   if (process.env.REQUEST_LOGGING === 'false') return;
@@ -81,10 +85,13 @@ export const requestLogging: RequestHandler = (req, res, next) => {
       && !/^\/api\/auth(?:\/|$)/.test(req.path);
     let responseBody: unknown;
     if (includeBodies) {
-      const json = res.json;
-      res.json = function (body) {
-        responseBody = safeBody(body);
-        return json.call(this, body);
+      const send = res.send;
+      res.send = function (body) {
+        if (String(this.getHeader('Content-Type') ?? '').includes('json') && (typeof body === 'string' || Buffer.isBuffer(body))) {
+          try { responseBody = safeBody(JSON.parse(body.toString())); }
+          catch { responseBody = '[Invalid JSON omitted]'; }
+        }
+        return send.call(this, body);
       };
     }
     res.setHeader('X-Request-ID', requestId);

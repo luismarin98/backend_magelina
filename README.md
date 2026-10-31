@@ -150,6 +150,8 @@ peticiones de la API y sus respuestas JSON. Se ocultan campos de credenciales
 El contenido se limita en longitud, profundidad y cantidad de elementos;
 las respuestas HTML, binarias y streams no se capturan.
 `REQUEST_LOG_BODIES=false` permite conservar solo los metadatos HTTP.
+Con `LOG_FORMAT=pretty`, los cuerpos se imprimen en bloques `REQUEST JSON` y
+`RESPONSE JSON`, con indentacion; una peticion sin cuerpo muestra `null`.
 Los cuerpos pueden contener datos de negocio; aplica la misma restriccion
 de acceso a los logs que a la API. Las llamadas salientes conservan sus
 registros de metodo, ruta, estado y duracion sin incluir cuerpos.
