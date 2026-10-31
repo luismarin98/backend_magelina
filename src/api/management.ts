@@ -19,6 +19,7 @@ import type { ManagementDependencies } from '../types/http.js';
 import { Router } from 'express';
 import { requireUser } from '../auth/routes.js';
 import { isDatabaseReady } from '../database/connection.js';
+import { getDatabaseStorage } from '../database/storage.js';
 import { workflowRoutes } from '../modules/workflow/routes.js';
 import { knowledgeRoutes } from '../modules/knowledge/routes.js';
 import { settingsRoutes } from '../modules/settings/routes.js';
@@ -72,10 +73,11 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   });
   router.get('/admin/users', identities);
   router.use('/admin/commands', commandRoutes(config, undefined, bot));
-  router.get('/admin/overview', (_req, res) => {
-    res.json({
+  router.get('/admin/overview', async (_req, res) => {
+    const storage = await getDatabaseStorage();
+    res.set('Cache-Control', 'no-store').json({
       bot: { ...serializeBot(bot.user), ready: bot.isReady(), name: bot.user?.username ?? null, uptimeMs: bot.uptime ?? 0 },
-      database: { ready: isDatabaseReady() },
+      database: { ready: isDatabaseReady(), storage },
       guildCount: bot.guilds.cache.size,
       guilds: [...bot.guilds.cache.values()].map(serializeGuild),
     });
