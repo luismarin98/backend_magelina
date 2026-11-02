@@ -133,3 +133,5 @@ export interface MusicState {
 }
 export interface MusicResponse { player: MusicState; enabled: boolean; youtubeEnabled?: boolean; canEnableYouTube?: boolean; channels: { id: string; name: string; canConnect: boolean }[]; canRequest: boolean; canManage: boolean; listeners?: number }
 export interface MusicSearchResponse { tracks: MusicTrack[] }
+
+export interface RoleMembersResponse { members: { id: string; name: string; username: string; assigned: boolean }[]; canAssign: boolean }

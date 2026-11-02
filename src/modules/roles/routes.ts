@@ -44,6 +44,37 @@ export function roleRoutes(access: ReturnType<typeof guildAuthorization>) {
         return { id: role.id, name: role.name, color: role.hexColor, managed: role.managed, editable: ctx.editable(role), kind: binding?.kind, bindingVersion: binding?.version ?? 0 };
       }) });
   });
+  router.get('/:roleId/members', async (req, res) => {
+    const guild = req.managedGuild!;
+    const ctx = await context(guild, req.session.user!.id, req.guildAccess!.source === 'bot-owner');
+    const role = guild.roles.cache.get(id(routeParam(req, 'roleId'), true));
+    if (!role) throw workflowError(404, 'El rol ya no existe.');
+    // REST pagination avoids reporting an incomplete gateway member cache.
+    const members = [];
+    let after: string | undefined;
+    for (;;) {
+      const page = await guild.members.list({ limit: 1000, ...(after ? { after } : {}) });
+      for (const member of page.values()) members.push({ id: member.id, name: member.displayName, username: member.user.username, assigned: role.id === guild.id || member.roles.cache.has(role.id) });
+      if (page.size < 1000) break;
+      after = page.last()!.id;
+    }
+    res.json({ members, canAssign: ctx.editable(role) && (!ctx.actor || ctx.actor.permissions.has(PermissionFlagsBits.Administrator)) });
+  });
+  router.put('/:roleId/members/:memberId', async (req, res) => {
+    const guild = req.managedGuild!;
+    const ctx = await context(guild, req.session.user!.id, req.guildAccess!.source === 'bot-owner');
+    const role = guild.roles.cache.get(id(routeParam(req, 'roleId'), true));
+    if (!role || !ctx.editable(role) || (ctx.actor && !ctx.actor.permissions.has(PermissionFlagsBits.Administrator))) {
+      throw workflowError(403, 'Necesitas Administrador en Discord y un rol inferior al tuyo y al de Magelina que no sea de una integración.');
+    }
+    const memberId = id(routeParam(req, 'memberId'), true);
+    const member = await guild.members.fetch({ user: memberId, force: true }).catch((error: unknown) => {
+      if (hasCode(error, 10007)) throw workflowError(404, 'El usuario ya no pertenece al servidor.');
+      throw error;
+    });
+    await member.roles.add(role, `Magelina: usuario ${req.session.user!.id}`);
+    res.json({ assigned: true });
+  });
   router.post('/', async (req, res) => {
     const input = object(req.body, ['name', 'color', 'permissions', 'kind']);
     const name = text(input.name, 100), template = templateFor(input.kind), permissions = permissionBits(input.permissions);
