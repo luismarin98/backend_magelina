@@ -1,4 +1,5 @@
 import { interactionGuild } from './guild.js';
+import { handleSupportInteraction } from './support.js';
 import { t } from '../i18n/index.js';
 import { ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder, MessageFlags, ChannelType, PermissionFlagsBits as P, escapeMarkdown, type Interaction, type Client } from 'discord.js';
 import type { Config } from '../config/env.js';
@@ -47,6 +48,7 @@ export function musicSearchPanel(userId: string, guildId: string, tracks: MusicT
 }
 
 export async function handleInteractive(interaction: Interaction, config: Pick<Config, 'ownerIds'>, musicFor: (client: Client) => Pick<MusicService, 'snapshot' | 'enqueue'> = getMusicService) {
+  if ((interaction.isButton?.() || interaction.isModalSubmit?.()) && 'customId' in interaction && interaction.customId.startsWith('support:')) return handleSupportInteraction(interaction);
   if (!interaction.isStringSelectMenu() || !interaction.customId.startsWith('mgl:')) return;
   const i = interaction;
   try {

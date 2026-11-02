@@ -3,6 +3,8 @@ import { musicRoutes } from '../modules/music/routes.js';
 import { getMusicService } from '../modules/music/service.js';
 import { moderationRoutes } from '../modules/moderation/routes.js';
 import { roleRoutes } from '../modules/roles/routes.js';
+import { channelRoutes } from '../modules/channels/routes.js';
+import { supportRoutes } from '../modules/support/routes.js';
 import { routeParam } from '../modules/common/input.js';
 import { projectRoutes } from '../modules/projects/routes.js';
 import { collaborationRoutes } from '../modules/collaboration/routes.js';
@@ -62,6 +64,8 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   });
 
   router.use('/guilds/:guildId/roles', roleRoutes(access));
+  router.use('/guilds/:guildId/channels', channelRoutes(access));
+  router.use('/guilds/:guildId/support', supportRoutes(access));
 
   router.use('/admin', async (req, res, next) => {
     if (!['owner', 'operator'].includes(await effectiveRole(req.session.user!.id, config))) {

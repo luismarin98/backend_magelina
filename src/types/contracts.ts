@@ -137,3 +137,12 @@ export interface MusicSearchResponse { tracks: MusicTrack[] }
 export interface RoleMembersResponse { members: { id: string; name: string; username: string; assigned: boolean }[]; canAssign: boolean }
 
 export interface GuildRoleMembersResponse { members: { id: string; name: string; username: string; roleIds: string[] }[]; assignableRoleIds: string[] }
+
+export interface GuildChannelsResponse { canCreate: boolean; channels: { id: string; name: string; type: 'text' | 'voice' }[] }
+export interface SupportTicketDto { _id: string; guildId: string; requesterId: string; subject: string; description: string; channelId: string | null; state: 'pending' | 'creating' | 'open' | 'in_progress' | 'escalated' | 'closed' | 'uncertain'; assigneeId: string | null; escalationReason?: string | null; version: number; createdAt: string; updatedAt: string }
+export interface SupportResponse { items: SupportTicketDto[]; nextCursor: string | null; canModerate: boolean; canAdmin: boolean; canRequest: boolean }
+export interface SupportMessagesResponse { messages: { id: string; author: string; content: string; createdAt: string; url: string }[] }
+
+export interface SupportHelpResponse { version: number; faqs: { question: string; answer: string }[]; panelChannelId: string | null; panelMessageId: string | null; canManage: boolean; channels: { id: string; name: string }[] }
+
+export interface SupportOverviewResponse { groups: { id: string; name: string; pendingCount: number; awaitingReview: number; escalatedCount: number; oldestAt: string }[]; total: number; page: number; nextPage: number | null }
