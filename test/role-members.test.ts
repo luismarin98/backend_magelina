@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import session from 'express-session';
@@ -29,7 +29,12 @@ test('role members require live administrator authority and role hierarchy for a
   try {
     const data = await (await fetch(url)).json(); assert.equal(data.members[0].assigned, true); assert.equal(data.canAssign, false);
     assert.equal((await put()).status, 403); assert.equal(writes, 0);
-    bits = P.Administrator; assert.equal((await put()).status, 200); assert.equal(writes, 1);
+    const directory = await (await fetch(url.replace(`/${roleId}/members`, '/members'))).json();
+    assert.deepEqual(directory.members[0].roleIds, [roleId]); assert.deepEqual(directory.assignableRoleIds, []);
+    bits = P.Administrator;
+    const adminDirectory = await (await fetch(url.replace(`/${roleId}/members`, '/members'))).json();
+    assert.deepEqual(adminDirectory.assignableRoleIds, [roleId]);
+    assert.equal((await put()).status, 200); assert.equal(writes, 1);
     hierarchy = 0; assert.equal((await put()).status, 403); assert.equal(writes, 1);
     hierarchy = 1; botBits = 0n; assert.equal((await put()).status, 403); assert.equal(writes, 1);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }

@@ -135,3 +135,5 @@ export interface MusicResponse { player: MusicState; enabled: boolean; youtubeEn
 export interface MusicSearchResponse { tracks: MusicTrack[] }
 
 export interface RoleMembersResponse { members: { id: string; name: string; username: string; assigned: boolean }[]; canAssign: boolean }
+
+export interface GuildRoleMembersResponse { members: { id: string; name: string; username: string; roleIds: string[] }[]; assignableRoleIds: string[] }

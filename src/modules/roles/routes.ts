@@ -17,6 +17,17 @@ async function context(guild: Guild, userId: string, globalOwner: boolean) {
   const editable = (role: Role) => canCreate && role.id !== guild.id && !role.managed && me.roles.highest.comparePositionTo(role) > 0 && (!actor || actor.roles.highest.comparePositionTo(role) > 0);
   return { me, actor, canCreate, editable };
 }
+async function listMembers(guild: Guild) {
+  const members = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await guild.members.list({ limit: 1000, ...(after ? { after } : {}) });
+    for (const member of page.values()) members.push({ id: member.id, name: member.displayName, username: member.user.username, roleIds: [...member.roles.cache.keys()] });
+    if (page.size < 1000) break;
+    after = page.last()!.id;
+  }
+  return members;
+}
 async function bind(guildId: string, roleId: string, kind: string, expected: number, actorId: string) {
   try {
     const result = await GuildRoleBinding.findOneAndUpdate({ guildId, roleId, version: expected }, { $set: { kind, actorId }, $inc: { version: 1 } }, { upsert: expected === 0, new: true, runValidators: true });
@@ -44,20 +55,18 @@ export function roleRoutes(access: ReturnType<typeof guildAuthorization>) {
         return { id: role.id, name: role.name, color: role.hexColor, managed: role.managed, editable: ctx.editable(role), kind: binding?.kind, bindingVersion: binding?.version ?? 0 };
       }) });
   });
+  router.get('/members', async (req, res) => {
+    const guild = req.managedGuild!;
+    const ctx = await context(guild, req.session.user!.id, req.guildAccess!.source === 'bot-owner');
+    const administrator = !ctx.actor || ctx.actor.permissions.has(PermissionFlagsBits.Administrator);
+    res.json({ members: await listMembers(guild), assignableRoleIds: administrator ? [...guild.roles.cache.values()].filter(ctx.editable).map(role => role.id) : [] });
+  });
   router.get('/:roleId/members', async (req, res) => {
     const guild = req.managedGuild!;
     const ctx = await context(guild, req.session.user!.id, req.guildAccess!.source === 'bot-owner');
     const role = guild.roles.cache.get(id(routeParam(req, 'roleId'), true));
     if (!role) throw workflowError(404, 'El rol ya no existe.');
-    // REST pagination avoids reporting an incomplete gateway member cache.
-    const members = [];
-    let after: string | undefined;
-    for (;;) {
-      const page = await guild.members.list({ limit: 1000, ...(after ? { after } : {}) });
-      for (const member of page.values()) members.push({ id: member.id, name: member.displayName, username: member.user.username, assigned: role.id === guild.id || member.roles.cache.has(role.id) });
-      if (page.size < 1000) break;
-      after = page.last()!.id;
-    }
+    const members = (await listMembers(guild)).map(member => ({ ...member, assigned: role.id === guild.id || member.roleIds.includes(role.id) }));
     res.json({ members, canAssign: ctx.editable(role) && (!ctx.actor || ctx.actor.permissions.has(PermissionFlagsBits.Administrator)) });
   });
   router.put('/:roleId/members/:memberId', async (req, res) => {
