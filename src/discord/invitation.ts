@@ -6,6 +6,7 @@ export const invitationFeatures = [
   { id: 'messages', permissions: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'EmbedLinks'] },
   { id: 'moderation', permissions: ['KickMembers', 'BanMembers', 'ModerateMembers', 'ViewAuditLog'] },
   { id: 'channels-support', permissions: ['ManageChannels', 'ManageRoles', 'ManageThreads'] },
+  { id: 'adventure-notices', permissions: ['ManageChannels', 'ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
   { id: 'music', permissions: ['Connect', 'Speak', 'MoveMembers'] },
   // Discord only lets the bot grant permissions it possesses when creating roles.
   { id: 'role-templates', permissions: [...permissionOptions as (keyof typeof P)[]] },

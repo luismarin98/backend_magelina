@@ -38,3 +38,28 @@ Disponibles: habilitación administrativa, creación voluntaria, inscripción en
 Pendientes: expediciones, trabajos del worker, inventario, equipo, fabricación, tienda, misiones, recompensas, progresión, reputación y perfiles públicos, comandos de Discord. Las tarjetas de esas actividades indican «En preparación» y no ejecutan acciones ficticias.
 
 La reputación futura y las recompensas deben tener reglas globales; cada servidor no puede multiplicar monedas ni experiencia mediante su configuración local.
+
+## Diseños de objetos
+
+En Comunidad > Gremio de aventureros > Diseños de objetos, los jugadores inscritos crean borradores globales privados. Pueden elegir ocho iconos de biblioteca o cargar PNG, JPEG o WebP de hasta 2 MB. La dashboard realiza recorte central con zoom a 256 por 256 y genera PNG; el backend valida firma, CRC, dimensiones, flujo comprimido y filtros, rechazando animaciones y formatos activos. Se almacena el PNG en el documento MongoDB del diseño, con límite de 512 KB, sin depender de adjuntos de Discord. La imagen no se incluye en las listas ni en los logs.
+
+Los cosméticos pasan de borrador a enviado y después a aprobado o rechazado. Solo el propietario global del bot puede revisarlos; un administrador local no puede aprobar contenido global. La revisión no obliga al propietario a crear un personaje. Requiere abrir el juego en un servidor compartido con la modalidad habilitada. Los rechazos incluyen motivo, el creador puede corregir y volver a enviar. Los aprobados forman el catálogo global y quedan bloqueados para edición directa. Equipo, materiales y consumibles solo admiten borradores por ahora.
+
+Las listas tienen diez resultados por página. Las imágenes privadas solo son visibles para su autor; las propuestas enviadas también para el revisor global y las aprobadas para los participantes. Guardar, enviar o aprobar un diseño nunca crea una unidad de inventario, cambia estadísticas ni entrega monedas. Los campos de daño, precio y recompensas no se aceptan en estas rutas.
+
+
+### Catálogo visual predefinido
+Los nuevos diseños usan exclusivamente el identificador de uno de ocho iconos de Game-icons.net. Los SVG se distribuyen localmente con el dashboard, incluyendo licencia y atribución a Lorc, Willdabeast y Delapouite (CC BY 3.0). Se retiraron la carga y el recorte de imágenes de la interfaz; la API rechaza `imageData` en altas y ediciones. Esta modalidad sustituye el flujo de carga descrito anteriormente. Las imágenes antiguas no se borran en masa; al guardar un borrador editable se sustituye su imagen por el icono elegido.
+El acceso al juego también aparece directamente en cada tarjeta de servidor conectado y en la navegación del servidor. La activación sigue requiriendo propietario o Administrador de Discord.
+
+
+### Entrada global al juego
+La sección **Mi aventura** del sidebar abre `/adventure`, independiente de un servidor. `GET /api/adventure` no crea datos. `POST /api/adventure/start` crea voluntariamente un personaje global con alias y oficio (`hunter` o `merchant`), sin monedas ni membresías de regalo; reintentos y peticiones concurrentes conservan el personaje existente. `PATCH /api/adventure/character` permite editar alias y oficio con control de versión. Los personajes anteriores sin oficio pueden elegirlo sin perder progreso.
+Unirse mediante `/guilds/:guildId/adventure/join` requiere un personaje existente, pertenencia real al servidor, presencia del bot y el juego habilitado por un administrador. El oficio por ahora es identidad, no implementa mecánicas de combate ni comercio. Las ciudades siguen pendientes.
+
+
+### Integración opcional con Discord
+En el servidor: **Gremio de aventureros > Integración con Discord > Configurar avisos del gremio**. Por defecto no se crean canales ni se envían avisos. Se puede seleccionar una categoría y un canal de texto existente dentro de ella. La acción explícita de creación crea `#avisos-del-gremio` en la categoría elegida, o crea también una categoría `Gremio de aventureros` si no se seleccionó ninguna. No mueve ni modifica canales existentes; los nuevos heredan permisos de su categoría. Crear recursos no activa los avisos: hay que guardar la configuración.
+Solo administradores reales del servidor pueden delegar esta configuración a roles concretos. Los delegados pueden configurar el canal y crear los recursos solicitados, pero no delegar a otros ni activar el juego. El backend valida pertenencia, roles actuales, categoría del canal y permisos del bot. Se comparte el control de versión con la activación del juego.
+Las nuevas inscripciones al juego guardan su aviso pendiente en el mismo documento de membresía (`$setOnInsert`): repetir la inscripción no genera avisos nuevos. El worker revisa la cola cada 15 segundos, respeta mantenimiento y servidores bloqueados, comprueba otra vez la integración y reintenta hasta cinco veces. Los mensajes no envían menciones y usan un nonce estable con `enforceNonce` para reducir duplicados en reintentos recientes. Discord limita temporalmente esa deduplicación; no es una garantía de entrega exactamente una vez ante fallos prolongados. Un fallo del aviso no revierte la inscripción. Desactivar avisos cancela los pendientes al procesarlos; no publica inscripciones antiguas retroactivamente. Los estados y errores de envío permanecen en MongoDB.
+En esta entrega se publica la **inscripción al gremio del juego**, no el ingreso al servidor de Discord. Viajes, ciudades y avisos de llegada/salida siguen pendientes de implementar.

@@ -69,7 +69,7 @@ export function safeBody(value: unknown): unknown {
     for (const [key, child] of Object.entries(item).slice(0, 40)) {
       if (remaining <= 0) { result._truncated = true; break; }
       remaining -= key.length;
-      result[key.slice(0, 128)] = /token|secret|password|passwd|authorization|cookie|session|api.?key|credential|^code$|^state$/i.test(key)
+      result[key.slice(0, 128)] = /token|secret|password|passwd|authorization|cookie|session|api.?key|credential|^code$|^state$|^imageData$/i.test(key)
         ? '[Redacted]' : visit(child, depth + 1);
     }
     return result;

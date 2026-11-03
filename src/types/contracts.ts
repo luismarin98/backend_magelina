@@ -148,7 +148,15 @@ export interface SupportHelpResponse { categoryId?: string | null; version: numb
 export interface SupportOverviewResponse { groups: { id: string; name: string; pendingCount: number; awaitingReview: number; escalatedCount: number; oldestAt: string }[]; total: number; page: number; nextPage: number | null }
 
 export interface AdventureResponse {
-  enabled: boolean; configVersion: number; canConfigure: boolean;
-  character: { alias: string; level: number; rank: string; coins: number; experience: number; version: number } | null;
+  enabled: boolean; configVersion: number; canConfigure: boolean; canReviewItems?: boolean; canConfigureIntegration?: boolean;
+  character: { alias: string; profession?: 'hunter' | 'merchant' | null; level: number; rank: string; coins: number; experience: number; version: number } | null;
   membership: { guildId: string; localAlias: string | null; version: number; joinedAt: string } | null;
 }
+
+export interface AdventureItemDto {
+  _id: string; name: string; description: string; category: string; icon: string; hasImage: boolean;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected'; version: number; reviewReason: string | null; canEdit: boolean;
+}
+export interface AdventureItemsResponse { items: AdventureItemDto[]; nextCursor: string | null; canReview: boolean }
+
+export interface GlobalAdventureResponse { character: AdventureResponse['character'] }

@@ -6,7 +6,7 @@ import { REST } from 'discord.js';
 import { logRecord, observedFetch, observeDiscordRest, requestLogging, safeRoute, requestOutcome, formatLog, safeBody } from '../src/observability/logging.js';
 
 test('body sanitization redacts nested credentials and bounds large or circular payloads', () => {
-  const body: Record<string, unknown> = { name: 'Magelina', nested: { access_token: 'private-token', password: 'private-password', apiKey: 'private-key' }, text: 'x'.repeat(10000) };
+  const body: Record<string, unknown> = { name: 'Magelina', nested: { access_token: 'private-token', password: 'private-password', apiKey: 'private-key' }, imageData: 'private-image-payload', text: 'x'.repeat(10000) };
   body.self = body;
   const output = JSON.stringify(safeBody(body));
   assert.ok(output.includes('Magelina'));

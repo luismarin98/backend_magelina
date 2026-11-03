@@ -17,3 +17,5 @@ test('OAuth2 preserves direct links to grouped server tools', () => {
     assert.equal(safeReturnPath(path), path);
   }
 });
+
+test('preserves the global game entry after login', () => { assert.equal(safeReturnPath('/adventure'), '/adventure'); });

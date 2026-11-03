@@ -1,3 +1,5 @@
+import { startAdventureWorker } from './modules/adventure/worker.js';
+import { AdventureItem } from './database/models/AdventureItem.js';
 import { AdventureCharacter, AdventureMembership, AdventureConfig } from './database/models/Adventure.js';
 import { SupportAgent } from './database/models/SupportAgent.js';
 import { TeamSpace } from './database/models/TeamSpace.js';
@@ -80,7 +82,7 @@ try {
   await ModerationCase.init();
   await ModerationFollowup.init();
   await TeamSpace.init();
-  await Promise.all([AdventureCharacter.init(), AdventureMembership.init(), AdventureConfig.init(), SupportTicket.init(), SupportMessage.init(), SupportConfig.init(), SupportAgent.init()]);
+  await Promise.all([AdventureItem.init(), AdventureCharacter.init(), AdventureMembership.init(), AdventureConfig.init(), SupportTicket.init(), SupportMessage.init(), SupportConfig.init(), SupportAgent.init()]);
   await Promise.all([Project.init(), CollaborationProfile.init(), Mentorship.init(), AutomationRule.init(), AutomationJob.init(), BotControl.init(), SystemEvent.init()]);
   startupStage = 'discord';
   if (!stopping) await bot.login(config.discordToken);
@@ -95,7 +97,8 @@ try {
       console.error('Error del servidor HTTP.');
       void shutdown(1);
     });
-    stopWorker = startAutomationWorker(bot);
+    const stopAutomation = startAutomationWorker(bot), stopAdventure = startAdventureWorker(bot);
+    stopWorker = async () => { await Promise.all([stopAutomation(), stopAdventure()]); };
     getMusicService(bot, config.audiusApiKey).startMaintenance(bot);
     console.info(`API disponible en el puerto ${config.port}.`);
   }
