@@ -10,7 +10,6 @@ import { workflowError } from '../workflow/rules.js';
 import { hasCode } from '../../types/errors.js';
 import type { Config } from '../../config/env.js';
 import { serializeGuild } from '../../discord/images.js';
-import { listBotGuilds } from '../../discord/bot-guilds.js';
 
 export type RequireCapability = (capability: Capability) => RequestHandler;
 
@@ -52,7 +51,6 @@ export function guildAuthorization(bot: Client, config: Pick<Config, 'ownerIds'>
     req.managedGuild = guild; req.guildAccess = { ...access, source: access.canConfigure ? 'guild-owner' : 'delegated' }; next();
   };
   async function listGuilds(token: string, userId: string): Promise<ManagedGuild[]> {
-    if (config.ownerIds.includes(userId)) return (await listBotGuilds(bot)).map(guild => ({ ...guild, botInstalled: true }));
     const guilds = await listDiscordGuilds(token);
     const visible: ManagedGuild[] = [];
     const controls = await getControls();

@@ -66,13 +66,13 @@ test('HTTP: owner global ve comunidades y pantallas; otros roles no pueden escal
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try {
     const list = await globalThis.fetch(`${base}/guilds`);
-    assert.deepEqual(await list.json(), [guild, uncachedGuild].map(guild => ({ ...guild, icon: null, banner: null, botInstalled: true })));
+    assert.deepEqual(await list.json(), [{ ...guild, icon: null, banner: null, botInstalled: true }, ...[['100000000000000077', 'Sin Magelina'], ['100000000000000078', 'Administrador'], ['100000000000000079', 'Gestionar servidor']].map(([id, name]) => ({ id, name, icon: null, banner: null, botInstalled: false }))]);
     assert.equal((await globalThis.fetch(`${base}/guilds/${uncachedGuild.id}/settings`)).status, 200);
     const owner = await globalThis.fetch(`${base}/guilds/${guildId}/access`);
     assert.equal(owner.status, 200);
     assert.deepEqual(await owner.json(), { canConfigure: true, canManageRoles: true, canModerate: true, capabilities, source: 'bot-owner' });
     assert.equal((await globalThis.fetch(`${base}/guilds/${guildId}/settings`)).status, 200);
-    assert.equal(fetch.mock.calls.filter((call) => String(call.arguments[0]).startsWith('https://discord.com/')).length, 0);
+    assert.equal(fetch.mock.calls.filter((call) => String(call.arguments[0]).startsWith('https://discord.com/')).length, 1);
     assert.equal((await globalThis.fetch(`${base}/guilds/${guildId}/settings?role=owner`, { headers: { 'x-test-user': memberId } })).status, 403);
     assert.equal((await globalThis.fetch(`${base}/guilds/100000000000000099/access`)).status, 404);
     discordPermissions = '268435456';
