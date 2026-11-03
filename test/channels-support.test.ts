@@ -1,3 +1,4 @@
+import { SupportAgent } from '../src/database/models/SupportAgent.js';
 import { SupportConfig } from '../src/database/models/SupportConfig.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,6 +31,12 @@ test('HTTP channels and support enforce live permissions, case isolation and ide
   let actorBits = 0n, botBits = P.Administrator, channelReadable = true, creations = 0, failSave = false;
   let lastListFilter: any, channelFetches = 0;
   t.mock.method(SupportConfig, 'findOne', (() => ({ lean: async () => ({ categoryId: 'support-category' }) })) as never);
+  let agent: any = null;
+  t.mock.method(SupportAgent, 'findOne', (() => ({ lean: async () => agent })) as never);
+  t.mock.method(SupportAgent, 'findOneAndUpdate', (async (filter: any, update: any) => {
+    if (agent && agent.version !== filter.version) return null;
+    agent = { guildId, userId: filter.userId, ...update.$set, version: (agent?.version ?? 0) + 1 }; return agent;
+  }) as never);
   const createdOptions: any[] = [], sent: any[] = [], records = new Map<string, any>();
   const channel = { id: '100000000000000007', name: 'soporte', type: ChannelType.GuildText,
     permissionsFor: () => new PermissionsBitField(channelReadable ? P.Administrator : 0n),
@@ -75,6 +82,15 @@ test('HTTP channels and support enforce live permissions, case isolation and ide
     assert.equal((await write('/channels', privateChannel)).status, 403); assert.equal(creations, 0);
     actorBits = P.ManageChannels; assert.equal((await write('/channels', privateChannel)).status, 403);
     actorBits |= P.ManageRoles; assert.equal((await write('/channels', privateChannel)).status, 201);
+    const teamPath = `/support/team/${moderatorId}`;
+    const teamFields = { available: true, maxCases: 3, specialties: ['tecnico'], version: 0 };
+    assert.equal((await write(teamPath, teamFields, 'PUT', userId)).status, 403);
+    assert.equal((await write(teamPath, teamFields, 'PUT', moderatorId)).status, 403);
+    assert.equal((await write(teamPath, teamFields, 'PUT', adminId)).status, 200);
+    assert.equal((await write(teamPath, { ...teamFields, version: 1, maxCases: 10 }, 'PUT', moderatorId)).status, 403);
+    assert.equal((await write(teamPath, { ...teamFields, version: 1, available: false }, 'PUT', moderatorId)).status, 200);
+    assert.equal(agent.available, false);
+    assert.equal((await write(teamPath, { ...teamFields, version: 2, specialties: ['invalid'] }, 'PUT', adminId)).status, 400);
     assert.equal(createdOptions[0].type, ChannelType.GuildVoice);
     assert.deepEqual(createdOptions[0].permissionOverwrites.find((row: any) => row.id === guildId).deny, [P.ViewChannel]);
     assert.ok(createdOptions[0].permissionOverwrites.some((row: any) => row.id === userId));
@@ -115,11 +131,17 @@ test('HTTP channels and support enforce live permissions, case isolation and ide
     assert.equal((await write(ticketPath + '/messages', { content: 'Hola @everyone' })).status, 201);
     assert.deepEqual(sent.at(-1).allowedMentions, { parse: [] });
     channelReadable = false; assert.equal((await fetch(base + ticketPath + '/messages')).status, 403); channelReadable = true;
-    assert.equal((await write(ticketPath, { action: 'escalate', version: 1, reason: 'Requiere una decision administrativa' }, 'PATCH', moderatorId)).status, 200);
+    assert.equal((await write(ticketPath, { action: 'wait', version: 1 }, 'PATCH', moderatorId)).status, 200);
+    assert.equal(records.get(item._id).state, 'waiting_user');
+    assert.equal(records.get(item._id).active, true);
+    assert.equal((await write(ticketPath, { action: 'resume', version: 2 }, 'PATCH', userId)).status, 403);
+    assert.equal((await write(ticketPath, { action: 'resume', version: 2 }, 'PATCH', moderatorId)).status, 200);
+    assert.equal((await write(ticketPath, { action: 'close', version: 3 }, 'PATCH', adminId)).status, 400);
+    assert.equal((await write(ticketPath, { action: 'escalate', version: 3, reason: 'Requiere una decision administrativa' }, 'PATCH', moderatorId)).status, 200);
     const adminList = await (await fetch(base + '/support', { headers: { 'x-user': adminId } })).json();
     assert.equal(adminList.items[0].state, 'escalated'); assert.equal(adminList.canAdmin, true);
-    assert.equal((await write(ticketPath, { action: 'close', version: 1 }, 'PATCH', adminId)).status, 409);
-    assert.equal((await write(ticketPath, { action: 'close', version: 2 }, 'PATCH', adminId)).status, 200);
+    assert.equal((await write(ticketPath, { action: 'close', version: 1, resolution: 'Solucionado' }, 'PATCH', adminId)).status, 409);
+    assert.equal((await write(ticketPath, { action: 'close', version: 4, resolution: 'Solucionado' }, 'PATCH', adminId)).status, 200);
     assert.equal((await write(ticketPath + '/messages', { content: 'Otro mensaje' })).status, 409);
     assert.equal(records.get(item._id).active, false);
     const resolvedList = await fetch(base + `/support?state=closed&active=true&assigneeId=${moderatorId}`, { headers: { 'x-user': adminId } });

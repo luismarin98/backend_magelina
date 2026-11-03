@@ -44,7 +44,7 @@ export async function submitSupport(guildId: string, requesterId: string, body: 
 
 export async function assignSupport(guild: Guild, actorId: string, ctx: Awaited<ReturnType<typeof supportContext>>, ticket: { _id: unknown; state: string; version: number; channelId?: string | null; requesterId: string; reportType?: string; subject: string; description: string }, expected: number, assigneeId: string) {
   if (!ctx.canAdmin) throw workflowError(403, 'Solo un administrador puede revisar y asignar solicitudes.');
-  if (!['pending', 'open', 'in_progress', 'escalated'].includes(ticket.state)) throw workflowError(409, 'Este caso no admite una asignación.');
+  if (!['pending', 'open', 'in_progress', 'waiting_user', 'escalated'].includes(ticket.state)) throw workflowError(409, 'Este caso no admite una asignación.');
   if (!ctx.me.permissions.has([P.ManageChannels, P.ManageRoles, P.ViewChannel, P.SendMessages, P.ReadMessageHistory])) throw workflowError(403, 'Magelina necesita permisos para crear y gestionar canales privados y sus mensajes.');
   const assignee = await guild.members.fetch({ user: assigneeId, force: true }).catch(() => { throw workflowError(400, 'El moderador no está disponible en el servidor.'); });
   if (assignee.user.bot || (assignee.id !== guild.ownerId && !canReview(assignee))) throw workflowError(400, 'Selecciona un moderador o administrador de Discord.');

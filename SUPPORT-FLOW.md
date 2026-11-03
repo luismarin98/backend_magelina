@@ -128,3 +128,13 @@ Estos canales generales no son casos de soporte y no deberían heredar automáti
 - Dashboard: `../dashboard_magelina/src/components/GuildSupport.tsx`, `SupportOverview.tsx` y `SupportHelp.tsx`.
 
 Los tipos disponibles son Consulta general, Problema técnico, Acceso y permisos, Reporte de usuario y Otro. El tipo se guarda con el caso. Los casos anteriores se interpretan como Consulta general. Al mover canales bajo la categoría se conservan sus permisos propios; los casos privados no heredan acceso público. Publicar otra vez reutiliza la categoría y actualiza el panel.
+
+## Primera etapa de coordinacion del equipo
+
+El administrador registra moderadores actuales en Equipo de soporte y configura su limite de casos activos (1 a 50), especialidades y disponibilidad declarada. Cada moderador puede modificar solo su disponibilidad; capacidad y especialidades quedan reservadas a administracion. La configuracion conserva una version para evitar sobrescribir cambios concurrentes y no sustituye la comprobacion de permisos actuales de Discord.
+
+Los casos admiten ahora `waiting_user` (Esperando al usuario), sin dejar de ser activos. El moderador asignado o administrador puede pasar de En atencion a Esperando al usuario y retomar manualmente la atencion. En esta etapa una respuesta en Discord no cambia automaticamente ese estado. Todos los casos activos, incluidos los que esperan al usuario, cuentan en la carga mostrada.
+
+Cerrar un caso exige una resolucion no vacia de hasta 1500 caracteres, guardada con el caso y su historial. Los registros historicos cerrados sin resolucion siguen siendo consultables.
+
+La asignacion automatica, los nuevos flujos de Automatizaciones y los avisos de soporte siguen pendientes. Esta etapa prepara los datos para decidir candidatos; no asigna casos ni impone los limites sobre una asignacion manual.

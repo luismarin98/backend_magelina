@@ -1,3 +1,4 @@
+import { supportTeamRoutes } from './team.js';
 import { reportTypes } from './report-types.js';
 import { Router, type Request } from 'express';
 import { ChannelType, PermissionFlagsBits as P } from 'discord.js';
@@ -35,10 +36,11 @@ async function ticketChannel(req: Request, ticket: { channelId?: string | null }
 export function supportRoutes(access: ReturnType<typeof guildAuthorization>) {
   const router = Router({ mergeParams: true });
   router.use(access.requireMember);
+  router.use('/team', supportTeamRoutes());
   router.get('/', async (req, res) => {
     const ctx = await context(req), guildId = req.managedGuild!.id;
     const state = req.query.state;
-    if (state !== undefined && (typeof state !== 'string' || !['pending', 'in_progress', 'escalated', 'closed', 'uncertain'].includes(state))) throw workflowError(400, 'Estado no válido.');
+    if (state !== undefined && (typeof state !== 'string' || !['pending', 'in_progress', 'waiting_user', 'escalated', 'closed', 'uncertain'].includes(state))) throw workflowError(400, 'Estado no válido.');
     const assigneeId = req.query.assigneeId === undefined ? undefined : id(req.query.assigneeId, true);
     const requesterId = req.query.requesterId === undefined ? undefined : id(req.query.requesterId, true);
     if ((assigneeId || requesterId) && !ctx.canAdmin) throw workflowError(403, 'Solo un administrador puede consultar pendientes por persona.');
@@ -100,18 +102,21 @@ export function supportRoutes(access: ReturnType<typeof guildAuthorization>) {
   });
   router.patch('/:ticketId', async (req, res) => {
     const { ctx, ticket } = await visibleTicket(req), actorId = req.session.user!.id;
-    const input = object(req.body, ['action', 'version', 'assigneeId', 'reason']), expected = version(input.version);
+    const input = object(req.body, ['action', 'version', 'assigneeId', 'reason', 'resolution']), expected = version(input.version);
     if (input.action === 'assign') {
       res.json({ item: await assignSupport(req.managedGuild!, actorId, ctx, ticket, expected, id(input.assigneeId, true)) }); return;
     }
-    if (!['close', 'escalate'].includes(String(input.action))) throw workflowError(400, 'Accion no valida.');
+    if (!['close', 'escalate', 'wait', 'resume'].includes(String(input.action))) throw workflowError(400, 'Accion no valida.');
     if (!ctx.canAdmin && !(ctx.canModerate && ticket.assigneeId === actorId)) throw workflowError(403, 'Solo el moderador asignado o un administrador puede gestionar el caso.');
     if (ticket.state === 'closed') throw workflowError(409, 'El caso ya esta cerrado.');
     if (ticket.state === 'creating' && Date.now() - ticket.createdAt.getTime() < 120000) throw workflowError(409, 'Espera a que termine la preparacion del canal.');
     const reason = input.action === 'escalate' ? text(input.reason, 1000) : undefined;
-    if (reason && ticket.state !== 'in_progress') throw workflowError(409, 'Solo puedes escalar un caso en atencion.');
+    const resolution = input.action === 'close' ? text(input.resolution, 1500) : undefined;
+    if ((input.action === 'escalate' || input.action === 'wait') && ticket.state !== 'in_progress') throw workflowError(409, 'Esta acci\u00f3n requiere un caso en atenci\u00f3n.');
+    if (input.action === 'resume' && ticket.state !== 'waiting_user') throw workflowError(409, 'El caso no est\u00e1 esperando al usuario.');
+    const changes = input.action === 'close' ? { state: 'closed', active: false, resolution } : input.action === 'escalate' ? { state: 'escalated', escalationReason: reason } : { state: input.action === 'wait' ? 'waiting_user' : 'in_progress' };
     const item = await SupportTicket.findOneAndUpdate({ _id: ticket._id, guildId: req.managedGuild!.id, version: expected, state: ticket.state }, {
-      $set: reason ? { state: 'escalated', escalationReason: reason } : { state: 'closed', active: false }, $inc: { version: 1 }, $push: { history: { actorId, action: input.action, reason, at: new Date() } },
+      $set: changes, $inc: { version: 1 }, $push: { history: { actorId, action: input.action, reason: reason ?? resolution, at: new Date() } },
     }, { new: true });
     if (!item) throw workflowError(409, 'El caso cambio. Actualiza antes de continuar.');
     res.json({ item });
@@ -149,7 +154,7 @@ export function supportRoutes(access: ReturnType<typeof guildAuthorization>) {
   });
   router.post('/:ticketId/messages', async (req, res) => {
     const { ctx, ticket } = await visibleTicket(req);
-    if (!['open', 'in_progress', 'escalated'].includes(ticket.state)) throw workflowError(409, 'Este caso no admite mensajes nuevos.');
+    if (!['open', 'in_progress', 'waiting_user', 'escalated'].includes(ticket.state)) throw workflowError(409, 'Este caso no admite mensajes nuevos.');
     const input = object(req.body, ['content']), content = text(input.content, 1500);
     const channel = await ticketChannel(req, ticket, ctx);
     if (!channel.permissionsFor(ctx.me)?.has(P.SendMessages) || (ctx.actor && !channel.permissionsFor(ctx.actor)?.has(P.SendMessages))) throw workflowError(403, 'No tienes permiso para enviar mensajes en este canal.');
