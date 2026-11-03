@@ -1,3 +1,4 @@
+import { adventureRoutes } from '../modules/adventure/routes.js';
 import { teamSpaceRoutes } from '../modules/moderation/team-space.js';
 import { musicRoutes } from '../modules/music/routes.js';
 import { getMusicService } from '../modules/music/service.js';
@@ -38,6 +39,7 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   router.get('/commands/catalog', (_req, res) => res.json(commandCatalog()));
 
   const access = guildAuthorization(bot, config);
+  router.use('/guilds/:guildId/adventure', adventureRoutes(access));
   const requireGuildManager = access.requireNative;
   const identities = userIdentities(bot);
   router.get('/guilds/:guildId/users', access.requireAny, identities);

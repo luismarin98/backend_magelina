@@ -3,6 +3,6 @@ export function safeReturnPath(value: unknown): string {
   if (typeof value !== 'string' || value.length > 240 || /[^a-z0-9/]/i.test(value)) return '/dashboard';
   const path = value.replace(/\/+$/, '');
   if (/^\/dashboard$/.test(path) || /^\/admin(?:\/(?:servers|operations))?$/.test(path) ||
-      /^\/dashboard\/servers\/\d{17,20}(?:\/(?:tasks|knowledge|projects|collaboration|automations|audit|music|moderation|channels|support|roles|settings|permissions))?$/.test(path)) return path;
+      /^\/dashboard\/servers\/\d{17,20}(?:\/(?:adventure|tasks|knowledge|projects|collaboration|automations|audit|music|moderation|channels|support|roles|settings|permissions))?$/.test(path)) return path;
   return '/dashboard';
 }

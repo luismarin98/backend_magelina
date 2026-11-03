@@ -12,7 +12,7 @@ test('OAuth2 conserva solo destinos locales y conocidos', () => {
 });
 
 test('OAuth2 preserves direct links to grouped server tools', () => {
-  for (const section of ['support', 'moderation', 'channels', 'music']) {
+  for (const section of ['support', 'moderation', 'channels', 'music', 'adventure']) {
     const path = `/dashboard/servers/100000000000000001/${section}`;
     assert.equal(safeReturnPath(path), path);
   }

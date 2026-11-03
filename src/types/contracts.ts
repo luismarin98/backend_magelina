@@ -146,3 +146,9 @@ export interface SupportMessagesResponse { source?: 'discord' | 'archive'; archi
 export interface SupportHelpResponse { categoryId?: string | null; version: number; faqs: { question: string; answer: string }[]; panelChannelId: string | null; panelMessageId: string | null; canManage: boolean; channels: { id: string; name: string }[] }
 
 export interface SupportOverviewResponse { groups: { id: string; name: string; pendingCount: number; awaitingReview: number; escalatedCount: number; oldestAt: string }[]; total: number; page: number; nextPage: number | null }
+
+export interface AdventureResponse {
+  enabled: boolean; configVersion: number; canConfigure: boolean;
+  character: { alias: string; level: number; rank: string; coins: number; experience: number; version: number } | null;
+  membership: { guildId: string; localAlias: string | null; version: number; joinedAt: string } | null;
+}
