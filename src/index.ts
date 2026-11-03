@@ -1,3 +1,4 @@
+import { AdventureInventory, AdventureListing, AdventureReceipt } from './database/models/AdventureEconomy.js';
 import { startAdventureWorker } from './modules/adventure/worker.js';
 import { AdventureItem } from './database/models/AdventureItem.js';
 import { AdventureCharacter, AdventureMembership, AdventureConfig } from './database/models/Adventure.js';
@@ -82,7 +83,7 @@ try {
   await ModerationCase.init();
   await ModerationFollowup.init();
   await TeamSpace.init();
-  await Promise.all([AdventureItem.init(), AdventureCharacter.init(), AdventureMembership.init(), AdventureConfig.init(), SupportTicket.init(), SupportMessage.init(), SupportConfig.init(), SupportAgent.init()]);
+  await Promise.all([AdventureInventory.init(), AdventureListing.init(), AdventureReceipt.init(), AdventureItem.init(), AdventureCharacter.init(), AdventureMembership.init(), AdventureConfig.init(), SupportTicket.init(), SupportMessage.init(), SupportConfig.init(), SupportAgent.init()]);
   await Promise.all([Project.init(), CollaborationProfile.init(), Mentorship.init(), AutomationRule.init(), AutomationJob.init(), BotControl.init(), SystemEvent.init()]);
   startupStage = 'discord';
   if (!stopping) await bot.login(config.discordToken);

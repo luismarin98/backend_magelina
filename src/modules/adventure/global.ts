@@ -1,3 +1,4 @@
+import { economyRoutes } from './economy.js';
 import { Router } from 'express';
 import { AdventureCharacter } from '../../database/models/Adventure.js';
 import { requireUser } from '../../auth/routes.js';
@@ -15,6 +16,7 @@ const dto = (character: any) => character ? ({ alias: character.alias, professio
 export function globalAdventureRoutes() {
   const router = Router();
   router.use(requireUser);
+  router.use('/economy', economyRoutes());
   router.get('/', async (req, res) => {
     const character = await AdventureCharacter.findOne({ userId: req.session.user!.id }).lean();
     res.json({ character: dto(character) });
