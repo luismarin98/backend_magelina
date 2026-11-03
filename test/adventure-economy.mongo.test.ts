@@ -17,11 +17,15 @@ test('real MongoDB transactions preserve inventory and currency during concurren
   // Disable implicit collection/index creation for all application models.
   await mongoose.connect(config.mongoUri, { autoCreate: false, autoIndex: false, serverSelectionTimeoutMS: 10000 });
   const models = Object.fromEntries(Object.entries(economyModels).map(([name, model]) => [name, mongoose.model(prefix + name, model.schema.clone(), prefix + name)])) as unknown as typeof economyModels;
-  const { AdventureCharacter, AdventureItem, AdventureInventory, AdventureListing, AdventureReceipt } = models;
+  const { AdventureConfig, AdventureMembership, AdventureCharacter, AdventureItem, AdventureInventory, AdventureListing, AdventureReceipt } = models;
   try {
     for (const model of Object.values(models)) { await model.createCollection(); await model.createIndexes(); }
-    await AdventureCharacter.create([{ userId: 'alice', alias: 'Alice', profession: 'hunter' }, { userId: 'bob', alias: 'Bob', profession: 'merchant', coins: 20 }, { userId: 'carol', alias: 'Carol', profession: 'hunter', coins: 20 }]);
-    const call = (userId: string, action: string, fields: Record<string, unknown> = {}, key = randomUUID()) => economyOperation(userId, action, { ...fields, key }, models);
+    const country = '100000000000000001';
+    const world = { list: async () => [], verify: async () => 'Pais de prueba' };
+    await AdventureConfig.create({ guildId: country, enabled: true });
+    await AdventureMembership.create(['alice', 'bob', 'carol'].map(userId => ({ guildId: country, userId })));
+    await AdventureCharacter.create([{ userId: 'alice', alias: 'Alice', currentGuildId: country, profession: 'hunter' }, { userId: 'bob', alias: 'Bob', currentGuildId: country, profession: 'merchant', coins: 20 }, { userId: 'carol', alias: 'Carol', currentGuildId: country, profession: 'hunter', coins: 20 }]);
+    const call = (userId: string, action: string, fields: Record<string, unknown> = {}, key = randomUUID()) => economyOperation(userId, action, { ...(['list', 'buy', 'sell'].includes(action) ? { guildId: country } : {}), ...fields, key }, models, world);
     const gatherKey = randomUUID();
     await Promise.all([call('alice', 'gather', {}, gatherKey), call('alice', 'gather', {}, gatherKey)]);
     assert.equal((await AdventureInventory.findOne({ userId: 'alice' }))!.stacks.get('wood'), 2);
@@ -53,12 +57,33 @@ test('real MongoDB transactions preserve inventory and currency during concurren
     const cancelKey = randomUUID();
     await Promise.all([call(winner, 'cancel', { listingId: custom.listingId }, cancelKey), call(winner, 'cancel', { listingId: custom.listingId }, cancelKey)]);
     assert.equal((await AdventureInventory.findOne({ userId: winner }))!.stacks.get(`design:${approved._id}`), 1);
+    const otherCountry = '100000000000000002';
+    await AdventureConfig.create({ guildId: otherCountry, enabled: true });
+    await AdventureMembership.create(['alice', 'bob', 'carol'].map(userId => ({ guildId: otherCountry, userId })));
+    const traveller = await AdventureCharacter.findOne({ userId: winner });
+    const competition = await Promise.allSettled([
+      call(winner, 'list', { itemId: `design:${approved._id}`, quantity: 1, unitPrice: 3 }),
+      call(winner, 'travel', { guildId: otherCountry, version: traveller!.version }),
+    ]);
+    assert.equal(competition.filter(outcome => outcome.status === 'fulfilled').length, 1);
+    const after = await AdventureCharacter.findOne({ userId: winner });
+    if (competition[0].status === 'fulfilled') {
+      assert.equal(after!.currentGuildId, country);
+      await call(winner, 'travel', { guildId: otherCountry, version: after!.version });
+      const remote = competition[0].value.listingId;
+      await call(winner, 'cancel', { listingId: remote });
+      assert.equal((await AdventureInventory.findOne({ userId: winner }))!.stacks.get(`design:${approved._id}`), 1);
+    } else {
+      assert.equal(after!.currentGuildId, otherCountry);
+    }
+    await assert.rejects(call(winner, 'list', { itemId: `design:${approved._id}`, quantity: 1, unitPrice: 3 }), /viajar/);
+
   } finally {
     try {
       for (const model of Object.values(models)) {
         const name = model.collection.collectionName;
         assert.ok(name.startsWith(prefix));
-        assert.match(name, /^tmp_eco_[a-f0-9]{12}_Adventure(?:Character|Item|Inventory|Listing|Receipt)$/);
+        assert.match(name, /^tmp_eco_[a-f0-9]{12}_Adventure(?:Config|Membership|Character|Item|Inventory|Listing|Receipt)$/);
         try { await mongoose.connection.db!.dropCollection(name); }
         catch (error) { if (!(error && typeof error === 'object' && 'code' in error && error.code === 26)) throw error; }
       }

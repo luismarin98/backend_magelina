@@ -6,7 +6,7 @@ import { workflowError } from '../workflow/rules.js';
 import { hasCode } from '../../types/errors.js';
 
 export function integrationDefaults(config: any) {
-  return { enabled: config?.integration?.enabled ?? false, categoryId: config?.integration?.categoryId ?? null, channelId: config?.integration?.channelId ?? null, announceJoins: config?.integration?.announceJoins ?? true, delegateRoleIds: config?.integration?.delegateRoleIds ?? [] };
+  return { enabled: config?.integration?.enabled ?? false, categoryId: config?.integration?.categoryId ?? null, channelId: config?.integration?.channelId ?? null, announceArrivals: config?.integration?.announceArrivals ?? true, announceJoins: config?.integration?.announceJoins ?? true, delegateRoleIds: config?.integration?.delegateRoleIds ?? [] };
 }
 export function joinAnnouncement(config: any, alias: string) {
   const settings = integrationDefaults(config);
@@ -31,9 +31,9 @@ export function adventureIntegrationRoutes() {
       roles: [...roles.values()].filter(role => role.id !== guild.id && !role.managed).map(role => ({ id: role.id, name: role.name })) });
   });
   router.put('/', async (req, res) => {
-    const input = object(req.body, ['enabled', 'categoryId', 'channelId', 'announceJoins', 'delegateRoleIds', 'version']);
+    const input = object(req.body, ['enabled', 'categoryId', 'channelId', 'announceJoins', 'announceArrivals', 'delegateRoleIds', 'version']);
     const previous = res.locals.adventureIntegration;
-    const settings = { enabled: boolean(input.enabled), categoryId: input.categoryId === null ? null : id(input.categoryId, true), channelId: input.channelId === null ? null : id(input.channelId, true), announceJoins: boolean(input.announceJoins), delegateRoleIds: previous.delegateRoleIds as string[] };
+    const settings = { enabled: boolean(input.enabled), categoryId: input.categoryId === null ? null : id(input.categoryId, true), channelId: input.channelId === null ? null : id(input.channelId, true), announceJoins: boolean(input.announceJoins), announceArrivals: input.announceArrivals === undefined ? previous.announceArrivals : boolean(input.announceArrivals), delegateRoleIds: previous.delegateRoleIds as string[] };
     if (input.delegateRoleIds !== undefined) {
       if (!res.locals.adventureAdmin) throw workflowError(403, 'Solo un administrador puede delegar la configuración.');
       settings.delegateRoleIds = strings(input.delegateRoleIds, 20, 20).map(role => id(role, true));

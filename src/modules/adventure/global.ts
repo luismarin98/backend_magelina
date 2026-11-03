@@ -1,3 +1,4 @@
+import { worldRoutes, type WorldAccess } from './world.js';
 import { economyRoutes } from './economy.js';
 import { Router } from 'express';
 import { AdventureCharacter } from '../../database/models/Adventure.js';
@@ -11,12 +12,13 @@ function profession(value: unknown): 'hunter' | 'merchant' {
   if (value !== 'hunter' && value !== 'merchant') throw workflowError(400, 'Elige cazador o comerciante.');
   return value;
 }
-const dto = (character: any) => character ? ({ alias: character.alias, profession: character.profession ?? null, level: character.level, rank: character.rank, coins: character.coins, experience: character.experience, version: character.version }) : null;
+const dto = (character: any) => character ? ({ alias: character.alias, profession: character.profession ?? null, level: character.level, rank: character.rank, coins: character.coins, experience: character.experience, version: character.version, currentGuildId: character.currentGuildId ?? null, currentGuildName: character.currentGuildName ?? null }) : null;
 
-export function globalAdventureRoutes() {
+export function globalAdventureRoutes(world?: WorldAccess) {
   const router = Router();
   router.use(requireUser);
-  router.use('/economy', economyRoutes());
+  router.use('/economy', economyRoutes(world));
+  router.use('/world', worldRoutes(world));
   router.get('/', async (req, res) => {
     const character = await AdventureCharacter.findOne({ userId: req.session.user!.id }).lean();
     res.json({ character: dto(character) });

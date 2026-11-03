@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import { AdventureCharacter } from '../src/database/models/Adventure.js';
+import { AdventureCharacter, AdventureConfig, AdventureMembership } from '../src/database/models/Adventure.js';
 import { AdventureItem } from '../src/database/models/AdventureItem.js';
 import { AdventureInventory, AdventureListing, AdventureReceipt } from '../src/database/models/AdventureEconomy.js';
 import { economyOperation } from '../src/modules/adventure/economy.js';
@@ -21,8 +21,10 @@ test('crafting validates entire recipe before consuming materials, bounds quanti
 // Persistence double with serialized transactions and rollback. It verifies the service's
 // multi-document protocol, not MongoDB's deployment topology or write-conflict implementation.
 test('economy transfers escrow and money atomically, replays retries, and rejects forged or concurrent purchases', async t => {
-  type Collection = 'characters' | 'bags' | 'listings' | 'receipts' | 'designs';
-  let state: Record<Collection, any[]> = { characters: ['alice', 'bob', 'carol'].map((userId, index) => ({ userId, profession: index ? 'merchant' : 'hunter', coins: index ? 20 : 0, version: 0 })), bags: [], listings: [], receipts: [], designs: [] };
+  type Collection = 'characters' | 'bags' | 'listings' | 'receipts' | 'designs' | 'configs' | 'memberships';
+  const country = '100000000000000001', otherCountry = '100000000000000002';
+  const world = { list: async () => [], verify: async (_user: string, guild: string) => guild === country ? 'Pais A' : 'Pais B' };
+  let state: Record<Collection, any[]> = { characters: ['alice', 'bob', 'carol'].map((userId, index) => ({ userId, currentGuildId: country, profession: index ? 'merchant' : 'hunter', coins: index ? 20 : 0, version: 0 })), bags: [], listings: [], receipts: [], designs: [], configs: [country, otherCountry].map(guildId => ({ _id: guildId, guildId, enabled: true })), memberships: ['alice', 'bob', 'carol'].flatMap(userId => [country, otherCountry].map(guildId => ({ userId, guildId }))) };
   let sequence = 0, queue = Promise.resolve(), failReceipt = false;
   const find = (collection: Collection, filter: any) => state[collection].find(row => Object.entries(filter).every(([key, value]) => row[key] === value));
   const doc = (collection: Collection, row: any) => {
@@ -38,7 +40,7 @@ test('economy transfers escrow and money atomically, replays retries, and reject
     const q = { session: () => q, lean: async () => structuredClone(find(collection, filter) ?? null), then: (resolve: any, reject: any) => Promise.resolve(doc(collection, find(collection, filter))).then(resolve, reject) };
     return q;
   };
-  for (const [model, collection] of [[AdventureCharacter, 'characters'], [AdventureInventory, 'bags'], [AdventureListing, 'listings'], [AdventureReceipt, 'receipts'], [AdventureItem, 'designs']] as const) {
+  for (const [model, collection] of [[AdventureConfig, 'configs'], [AdventureMembership, 'memberships'], [AdventureCharacter, 'characters'], [AdventureInventory, 'bags'], [AdventureListing, 'listings'], [AdventureReceipt, 'receipts'], [AdventureItem, 'designs']] as const) {
     t.mock.method(model, 'findOne', ((filter: any) => query(collection, filter)) as never);
   }
   for (const [model, collection] of [[AdventureInventory, 'bags'], [AdventureListing, 'listings'], [AdventureReceipt, 'receipts']] as const) {
@@ -54,8 +56,9 @@ test('economy transfers escrow and money atomically, replays retries, and reject
     await beforeQueue; const snapshot = structuredClone(state);
     try { await callback(); } catch (error) { state = snapshot; throw error; } finally { release(); }
   } })) as never);
+  t.mock.method(AdventureConfig, 'updateOne', (async () => ({})) as never);
   let keyCount = 0;
-  const operation = (user: string, action: string, fields: any = {}, key = `operation-${String(++keyCount).padStart(16, '0')}`) => economyOperation(user, action, { ...fields, key });
+  const operation = (user: string, action: string, fields: any = {}, key = `operation-${String(++keyCount).padStart(16, '0')}`) => economyOperation(user, action, { ...(['list', 'buy', 'sell'].includes(action) ? { guildId: country } : {}), ...fields, key }, undefined, world);
   const bag = (userId: string) => find('bags', { userId })?.stacks as Map<string, number>;
   const balance = (userId: string) => find('characters', { userId }).coins;
   const sharedKey = 'gather-operation-0001';
@@ -75,6 +78,10 @@ test('economy transfers escrow and money atomically, replays retries, and reject
   await assert.rejects(operation('bob', 'buy', { listingId: offer.listingId }), /Saldo/);
   assert.equal(find('listings', { _id: offer.listingId }).status, 'open');
   find('characters', { userId: 'bob' }).coins = 20;
+  await assert.rejects(operation('bob', 'buy', { listingId: offer.listingId, guildId: otherCountry }), /viajar/);
+  find('characters', { userId: 'bob' }).currentGuildId = otherCountry;
+  await assert.rejects(operation('bob', 'buy', { listingId: offer.listingId, guildId: otherCountry }), /pertenece/);
+  find('characters', { userId: 'bob' }).currentGuildId = country;
   failReceipt = true;
   await assert.rejects(operation('bob', 'buy', { listingId: offer.listingId }), /write failure/);
   assert.equal(balance('bob'), 20); assert.equal(balance('alice'), 0);
@@ -96,6 +103,27 @@ test('economy transfers escrow and money atomically, replays retries, and reject
   await operation('carol', 'sell', { itemId: 'wood', quantity: 2 }, saleKey);
   assert.equal(balance('carol'), before + 4); assert.equal(bag('carol').has('wood'), false);
   await assert.rejects(operation('carol', 'sell', { itemId: 'wood', quantity: -1 }), /entero/);
+  const traveller = find('characters', { userId: 'alice' });
+  const versionBefore = traveller.version;
+  find('configs', { guildId: otherCountry }).integration = { enabled: true, announceArrivals: true, categoryId: 'category', channelId: 'channel' };
+  const travelKey = 'travel-operation-0001';
+  await operation('alice', 'travel', { guildId: otherCountry, version: versionBefore }, travelKey);
+  await operation('alice', 'travel', { guildId: otherCountry, version: versionBefore }, travelKey);
+  assert.equal(state.receipts.filter(item => item.key === travelKey).length, 1);
+  assert.equal(find('receipts', { key: travelKey }).notice.state, 'pending');
+  assert.equal(find('characters', { userId: 'alice' }).currentGuildId, otherCountry);
+  await assert.rejects(operation('alice', 'list', { itemId: 'wood', quantity: 1, unitPrice: 1 }), /viajar/);
+  await assert.rejects(operation('alice', 'travel', { guildId: country, version: versionBefore }), /personaje/);
+  find('configs', { guildId: country }).enabled = false;
+  await assert.rejects(operation('alice', 'travel', { guildId: country, version: versionBefore + 1 }), /desactivado/);
+  await operation('alice', 'travel', { guildId: null, version: versionBefore + 1 });
+  assert.equal(find('characters', { userId: 'alice' }).currentGuildId, null);
+  const legacyId = 'abcdefabcdefabcdefabcdef';
+  changeStack(bag('carol'), 'herb', -1);
+  state.listings.push({ _id: legacyId, sellerId: 'carol', itemId: 'herb', quantity: 1, status: 'open', unitPrice: 1 });
+  await operation('carol', 'travel', { guildId: null, version: find('characters', { userId: 'carol' }).version });
+  await operation('carol', 'cancel', { listingId: legacyId });
+  assert.equal(bag('carol').get('herb'), 2);
   await assert.rejects(operation('nobody', 'gather'), /aventura/);
 });
 

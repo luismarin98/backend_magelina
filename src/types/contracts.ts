@@ -149,7 +149,7 @@ export interface SupportOverviewResponse { groups: { id: string; name: string; p
 
 export interface AdventureResponse {
   enabled: boolean; configVersion: number; canConfigure: boolean; canReviewItems?: boolean; canConfigureIntegration?: boolean;
-  character: { alias: string; profession?: 'hunter' | 'merchant' | null; level: number; rank: string; coins: number; experience: number; version: number } | null;
+  character: { alias: string; profession?: 'hunter' | 'merchant' | null; currentGuildId?: string | null; currentGuildName?: string | null; level: number; rank: string; coins: number; experience: number; version: number } | null;
   membership: { guildId: string; localAlias: string | null; version: number; joinedAt: string } | null;
 }
 
