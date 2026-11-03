@@ -23,6 +23,7 @@ test('HTTP: owner global ve comunidades y pantallas; otros roles no pueden escal
   const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
   const guild = { id: guildId, name: 'Comunidad del bot' };
   const uncachedGuild = { id: '100000000000000006', name: 'Otra comunidad' };
+  t.mock.method(bot.guilds.cache, 'has', (id: string) => id === guildId);
   t.mock.method(bot.guilds.cache, 'get', (id: string) => id === guildId ? guild : undefined);
   t.mock.method(bot.guilds.cache, 'values', () => [guild].values());
   t.mock.method(bot.guilds, 'fetch', (async (options: unknown) => {
@@ -46,7 +47,7 @@ test('HTTP: owner global ve comunidades y pantallas; otros roles no pueden escal
   const fetch = t.mock.method(globalThis, 'fetch', originalFetch);
   // Solo intercepta Discord; las peticiones de prueba a localhost siguen siendo HTTP real.
   fetch.mock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
-    if (String(input).startsWith('https://discord.com/')) return new Response(JSON.stringify([{ id: guildId, name: guild.name, permissions: discordPermissions }]), { status: 200 });
+    if (String(input).startsWith('https://discord.com/')) return new Response(JSON.stringify([{ id: guildId, name: guild.name, permissions: discordPermissions }, { id: '100000000000000077', name: 'Sin Magelina', permissions: '0', owner: true }, { id: '100000000000000078', name: 'Administrador', permissions: '8' }, { id: '100000000000000079', name: 'Gestionar servidor', permissions: '32' }, { id: '100000000000000080', name: 'Solo moderacion', permissions: '1099511627776' }, { id: '100000000000000081', name: 'Solo miembro', permissions: '0' }]), { status: 200 });
     return originalFetch(input, init);
   });
   const access = guildAuthorization(bot, { ownerIds: [ownerId] });
@@ -86,7 +87,13 @@ test('HTTP: owner global ve comunidades y pantallas; otros roles no pueden escal
     const ordinary = await globalThis.fetch(`${base}/guilds/${guildId}/access`, { headers: { 'x-test-user': memberId } });
     assert.equal(ordinary.status, 200);
     assert.deepEqual((await ordinary.json() as { capabilities: string[] }).capabilities, []);
-    assert.equal((await globalThis.fetch(`${base}/guilds`, { headers: { 'x-test-user': memberId } })).status, 200);
+    for (const permissions of ['0', '8', '32']) {
+      discordPermissions = permissions;
+      const shared = await globalThis.fetch(`${base}/guilds`, { headers: { 'x-test-user': memberId } });
+      assert.equal(shared.status, 200);
+      assert.deepEqual(await shared.json(), [{ id: guildId, name: guild.name, icon: null, banner: null, botInstalled: true }, ...[['100000000000000077', 'Sin Magelina'], ['100000000000000078', 'Administrador'], ['100000000000000079', 'Gestionar servidor']].map(([id, name]) => ({ id, name, icon: null, banner: null, botInstalled: false }))]);
+    }
+    discordPermissions = '0';
     assert.equal((await globalThis.fetch(`${base}/guilds/${guildId}/tasks`, { headers: { 'x-test-user': memberId } })).status, 403);
     // Native Administrator and Manage Guild cannot claim governance or module access.
     for (const permissions of ['8', '32']) {
