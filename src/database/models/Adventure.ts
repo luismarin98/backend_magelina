@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const characterSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true, immutable: true },
   alias: { type: String, required: true, minlength: 2, maxlength: 32 },
+  activeAdventureId: { type: String, default: null },
+  nextAdventureAt: { type: Date, default: null },
   currentGuildId: { type: String, default: null },
   currentGuildName: { type: String, default: null },
   profession: { type: String, enum: ['hunter', 'merchant', null], default: null },
@@ -30,6 +32,7 @@ membershipSchema.index({ announcement: 1, announcementDueAt: 1 });
 membershipSchema.index({ guildId: 1, userId: 1 }, { unique: true });
 
 const configSchema = new mongoose.Schema({
+  lastAdventureCycle: { type: Number, default: null },
   commerceRevision: { type: Number, default: 0 },
   integration: {
     enabled: { type: Boolean, default: false },

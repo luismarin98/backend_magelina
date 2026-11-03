@@ -52,6 +52,7 @@ export async function economyOperation(userId: string, action: string, input: Re
       if (receipt) { result = replay(receipt); return; }
       const character = await AdventureCharacter.findOne({ userId }).session(session);
       if (!character) throw workflowError(409, 'Inicia tu aventura antes de usar el inventario.');
+      if (character.activeAdventureId && ['travel', 'gather'].includes(action)) throw workflowError(409, 'Termina o abandona tu aventura antes de viajar o recolectar.');
       let destinationConfig;
       if (guildId) {
         const config = await AdventureConfig.findOne({ guildId }).session(session).lean();
@@ -153,7 +154,7 @@ export function economyRoutes(world?: WorldAccess) {
     const [bag, character] = await Promise.all([AdventureInventory.findOne({ userId }).lean(), AdventureCharacter.findOne({ userId }).lean()]);
     const stacks = bag?.stacks instanceof Map ? [...bag.stacks] : Object.entries(bag?.stacks ?? {});
     const designs = await AdventureItem.find({ _id: { $in: stacks.map(([itemId]) => itemId).filter(itemId => itemId.startsWith('design:')).map(itemId => itemId.slice(7)) } }).select('name icon').lean();
-    res.json({ currentGuildId: character!.currentGuildId ?? null, coins: character!.coins, nextGatherAt: bag?.gatheredAt ? new Date(bag.gatheredAt.getTime() + ECONOMY.gatherCooldown).toISOString() : null,
+    res.json({ activeAdventureId: character!.activeAdventureId ?? null, currentGuildId: character!.currentGuildId ?? null, coins: character!.coins, nextGatherAt: bag?.gatheredAt ? new Date(bag.gatheredAt.getTime() + ECONOMY.gatherCooldown).toISOString() : null,
       inventory: stacks.filter(([, quantity]) => quantity > 0).map(([itemId, quantity]) => {
         const item = baseItems.find(item => item.id === itemId), design = designs.find(item => String(item._id) === itemId.slice(7));
         return { itemId, quantity, name: item?.name ?? design?.name ?? 'Cosmético', icon: item?.icon ?? design?.icon ?? 'sparkles', sellPrice: item?.sellPrice ?? 5 };

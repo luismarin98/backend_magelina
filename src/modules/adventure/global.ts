@@ -1,3 +1,4 @@
+import { expeditionRoutes } from './expeditions.js';
 import { worldRoutes, type WorldAccess } from './world.js';
 import { economyRoutes } from './economy.js';
 import { Router } from 'express';
@@ -18,6 +19,7 @@ export function globalAdventureRoutes(world?: WorldAccess) {
   const router = Router();
   router.use(requireUser);
   router.use('/economy', economyRoutes(world));
+  router.use('/expeditions', expeditionRoutes(world));
   router.use('/world', worldRoutes(world));
   router.get('/', async (req, res) => {
     const character = await AdventureCharacter.findOne({ userId: req.session.user!.id }).lean();

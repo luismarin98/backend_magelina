@@ -37,7 +37,7 @@ export function worldRoutes(access?: WorldAccess) {
     const guilds = await access.list(userId, req.session.accessToken!);
     const ids = guilds.map(guild => guild.id);
     const [configs, memberships] = await Promise.all([AdventureConfig.find({ guildId: { $in: ids } }).lean(), AdventureMembership.find({ guildId: { $in: ids }, userId }).lean()]);
-    res.json({ currentGuildId: character.currentGuildId ?? null, currentGuildName: character.currentGuildName ?? null, version: character.version,
+    res.json({ activeAdventureId: character.activeAdventureId ?? null, currentGuildId: character.currentGuildId ?? null, currentGuildName: character.currentGuildName ?? null, version: character.version,
       countries: guilds.map(guild => ({ ...guild, enabled: Boolean(configs.find(config => config.guildId === guild.id)?.enabled), joined: memberships.some(membership => membership.guildId === guild.id) })) });
   });
   return router;

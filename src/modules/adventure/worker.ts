@@ -1,3 +1,4 @@
+import { generateCountryExpeditions } from './expedition-generator.js';
 import { AdventureReceipt } from '../../database/models/AdventureEconomy.js';
 import { randomUUID } from 'node:crypto';
 import { ChannelType, escapeMarkdown, type Client } from 'discord.js';
@@ -56,7 +57,14 @@ export async function deliverTravelAnnouncements(bot: Client, isStopped = () => 
 export function startAdventureWorker(bot: Client) {
   let stopped = false, running: Promise<void> | undefined;
   const timer = setInterval(() => {
-    if (!running && !stopped) running = (async () => { await deliverAdventureAnnouncements(bot, () => stopped); if (!stopped) await deliverTravelAnnouncements(bot, () => stopped); })().catch(() => { console.warn('No se pudo procesar la cola de avisos del gremio.'); }).finally(() => { running = undefined; });
+    if (!running && !stopped) running = (async () => {
+      const tasks = [async () => { if (bot.isReady()) await generateCountryExpeditions(); }, () => deliverAdventureAnnouncements(bot, () => stopped), () => deliverTravelAnnouncements(bot, () => stopped)];
+      for (const task of tasks) {
+        if (stopped) break;
+        try { await task(); }
+        catch { console.warn('No se pudo completar una tarea del gremio. Se reintentará en el siguiente ciclo.'); }
+      }
+    })().finally(() => { running = undefined; });
   }, 15000);
   timer.unref();
   return async () => { stopped = true; clearInterval(timer); await running; };
