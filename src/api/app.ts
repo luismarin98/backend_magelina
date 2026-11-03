@@ -1,3 +1,4 @@
+import { botInvitation } from '../discord/invitation.js';
 import { apiLimiter } from '../modules/operations/limiter.js';
 import { logEvent } from '../modules/operations/service.js';
 import type { ErrorRequestHandler } from 'express';
@@ -117,7 +118,7 @@ export function createApp({ config, bot, isStopping }: AppDependencies) {
     }
     next();
   });
-  app.get('/api/bot', (_req, res) => { res.json({ bot: serializeBot(bot.user) }); });
+  app.get('/api/bot', (_req, res) => { res.json({ bot: serializeBot(bot.user), invitation: botInvitation(config.discordClientId) }); });
   app.use(session({
     name: 'bot.sid', secret: config.sessionSecret, resave: false, saveUninitialized: false,
     store: createSessionStore(mongoose.connection.getClient(), config.sessionSecret),

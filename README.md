@@ -179,3 +179,7 @@ al recibir las cabeceras; no mide la descarga completa del cuerpo.
 No se imprimen cuerpos, cookies, autorizacion, consultas ni tokens de Discord.
 Las rutas de seguimiento y espacio del equipo se reconocen sin mostrar IDs.
 Reinicia el backend para cargar cambios de configuracion y codigo.
+
+### Permisos de invitacion calculados
+
+`src/discord/invitation.ts` declara los requisitos por funcion y reutiliza las opciones de permisos de las plantillas de roles. `/api/bot` publica el enlace OAuth2, la mascara decimal y el recuento de permisos unicos. La dashboard usa ese enlace para todas las invitaciones, incluido el servidor preseleccionado. No se solicita Administrator. Al incorporar funciones que requieran permisos nuevos debe actualizarse el catalogo; el calculo de la mascara es automatico. Este enlace no modifica por si solo permisos de instalaciones existentes ni supera las restricciones de canales o jerarquia de roles.

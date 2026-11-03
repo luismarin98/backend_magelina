@@ -4,7 +4,7 @@ export type WorkStatus = 'submitted' | 'accepted' | 'in_progress' | 'completed' 
 export type KnowledgeAction = 'created' | 'updated' | 'reviewed' | 'archived' | 'restored';
 export interface DiscordImage { url: string; staticUrl: string }
 export interface BotIdentity { id: string; name: string; avatar: DiscordImage | null; avatarDecorationUrl: string | null }
-export interface BotIdentityResponse { bot: BotIdentity | null }
+export interface BotIdentityResponse { bot: BotIdentity | null; invitation?: { url: string; permissions: string; permissionCount: number; features: { id: string; permissions: string[] }[] } }
 export interface SessionUser { id: string; username: string; name: string; avatar?: DiscordImage | null; avatarDecorationUrl?: string | null }
 export interface SessionResponse { user: SessionUser; role: GlobalRole }
 export interface GuildSummary { id: string; name: string; icon?: DiscordImage | null; banner?: DiscordImage | null }
