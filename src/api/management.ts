@@ -51,7 +51,7 @@ export function managementRoutes({ bot, config }: ManagementDependencies) {
   router.use('/guilds/:guildId/automations', automationRoutes(access.requireCapability));
   router.use('/guilds/:guildId/audit-logs', auditRoutes(access.requireCapability));
 
-  router.use('/guilds/:guildId/music', musicRoutes(access.requireCapability, getMusicService(bot, config.audiusApiKey)));
+  router.use('/guilds/:guildId/music', musicRoutes(access.requireCapability, getMusicService(bot, config.audiusApiKey), access.requireMember));
   router.use('/guilds/:guildId/team-space', teamSpaceRoutes(access, config.dashboardOrigin));
   router.use('/guilds/:guildId/moderation', moderationRoutes(access));
   router.use('/guilds/:guildId/permissions', permissionRoutes(requireGuildManager));

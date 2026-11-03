@@ -15,6 +15,7 @@ import { defaultControls } from '../src/modules/operations/service.js';
 
 test('music HTTP enforces capabilities, membership in voice, bot permissions and private channel visibility', async (t) => {
   const guildId = '100000000000000001', actorId = '100000000000000002', channelId = '100000000000000003';
+  let viewerId = actorId;
   let capabilities: Capability[] = ['music.read'], canView = true, canSpeak = true;
   const actor = { id: actorId, voice: { channelId: null as string | null } }, me = { id: '100000000000000004', voice: { channelId: null } };
   const channel = { id: channelId, name: 'Sala', type: ChannelType.GuildVoice, full: false, members: new Map([['human', { user: { bot: false } }], ['bot', { user: { bot: true } }]]),
@@ -28,11 +29,11 @@ test('music HTTP enforces capabilities, membership in voice, bot permissions and
   t.mock.method(GuildSettings, 'findOne', () => ({ lean: async () => ({ guildId, version: 0, ...defaultSettings(), modules: { ...defaultSettings().modules, music: true }, history: [] }) }));
   t.mock.method(BotControl, 'findOne', () => ({ lean: async () => ({ key: 'global', version: 0, ...defaultControls(), history: [] }) }));
   const requireCapability: RequireCapability = (capability) => (req, res, next) => {
-    req.managedGuild = guild; req.guildAccess = { canConfigure: false, capabilities }; req.session.user = { id: actorId, name: 'Test', username: 'test' };
+    req.managedGuild = guild; req.guildAccess = { canConfigure: false, capabilities }; req.session.user = { id: viewerId, name: 'Test', username: 'test' };
     if (!capabilities.includes(capability)) { res.status(403).json({ error: 'Denied' }); return; } next();
   };
   const app = express(); app.use(express.json()); app.use(session({ secret: 'local-tests-only', resave: false, saveUninitialized: false }));
-  app.use('/guilds/:guildId/music', musicRoutes(requireCapability, service));
+  app.use('/guilds/:guildId/music', musicRoutes(requireCapability, service, (req, _res, next) => { req.managedGuild = guild; req.guildAccess = { canConfigure: false, capabilities }; req.session.user = { id: viewerId, name: 'Test', username: 'test' }; next(); }));
   app.use(((error, _req, res, _next) => res.status(error.status ?? 500).json({ error: error.publicMessage ?? 'Rejected' })) as express.ErrorRequestHandler);
   const server = app.listen(0, '127.0.0.1'); await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/guilds/${guildId}/music`;
@@ -73,5 +74,29 @@ test('music HTTP enforces capabilities, membership in voice, bot permissions and
     canView = true; actor.voice.channelId = null;
     assert.equal((await post('queue', { trackId: 'abc12', version: 2 })).status, 403);
     assert.equal(service.snapshot(guildId).queue.length, 0);
+    capabilities = [];
+    assert.equal((await fetch(base)).status, 200); // Ordinary members can read without delegated grants.
+    assert.equal((await post('control', { action: 'pause', version: 2 })).status, 403); // Must be in voice.
+    actor.voice.channelId = channelId;
+    assert.equal((await post('control', { action: 'pause', version: 2 })).status, 200);
+    assert.equal((await post('control', { action: 'volume', value: 40, version: 3 })).status, 403);
+    assert.equal((await post('control', { action: 'resume', version: 3 })).status, 200);
+    capabilities = ['music.read', 'music.request'];
+    viewerId = '100000000000000099';
+    assert.equal((await post('queue', { trackId: 'abc12', version: 4 })).status, 200);
+    const otherEntry = service.snapshot(guildId).queue[0]!;
+    viewerId = actorId;
+    assert.equal((await post('control', { action: 'remove', value: otherEntry.id, version: 5 })).status, 403);
+    viewerId = '100000000000000099';
+    const ownView = await (await fetch(base)).json();
+    assert.equal(ownView.canControlCurrent, false);
+    assert.deepEqual(ownView.removableEntryIds, [otherEntry.id]);
+    assert.equal((await post('control', { action: 'pause', version: 5 })).status, 403);
+    assert.equal((await post('control', { action: 'remove', value: otherEntry.id, version: 5 })).status, 200);
+    capabilities = ['music.read', 'music.request', 'music.manage'];
+    assert.equal((await post('control', { action: 'pause', version: 6 })).status, 200); // Authorized manager intervenes.
+    canView = false;
+    assert.equal((await fetch(base)).status, 403);
+
   } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
 });

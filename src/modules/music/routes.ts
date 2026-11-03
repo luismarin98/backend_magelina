@@ -1,3 +1,5 @@
+import { ownsMusicControl } from './ownership.js';
+import type { RequestHandler } from 'express';
 import { Router } from 'express';
 import { ChannelType, PermissionFlagsBits as P, type Guild, type GuildMember } from 'discord.js';
 import type { RequireCapability } from '../permissions/access.js';
@@ -14,9 +16,9 @@ async function members(guild: Guild, actorId: string, globalOwner: boolean) {
 function visible(channel: NonNullable<ReturnType<Guild['channels']['cache']['get']>>, actor: GuildMember | null) {
   return actor === null || Boolean(channel.permissionsFor(actor)?.has(P.ViewChannel));
 }
-export function musicRoutes(requireCapability: RequireCapability, service: MusicService) {
+export function musicRoutes(requireCapability: RequireCapability, service: MusicService, requireMember: RequestHandler = requireCapability('music.read')) {
   const router = Router({ mergeParams: true });
-  router.get('/', requireCapability('music.read'), async (req, res) => {
+  router.get('/', requireMember, async (req, res) => {
     const guild = req.managedGuild!, settings = await getSettings(guild.id);
     const [channels] = await Promise.all([guild.channels.fetch(), guild.roles.fetch()]).catch(() => {
       throw workflowError(502, 'No se pudieron cargar los canales de Discord. Actualiza el monitor e inténtalo de nuevo.');
@@ -26,7 +28,11 @@ export function musicRoutes(requireCapability: RequireCapability, service: Music
     const channel = player.channelId ? channels.get(player.channelId) : null;
     if (player.channelId && (!channel || !visible(channel, actor))) throw workflowError(403, 'No puedes consultar la cola de un canal privado al que no tienes acceso.');
     const listeners = channel?.type === ChannelType.GuildVoice ? [...channel.members.values()].filter((member) => !member.user.bot).length : 0;
-    res.json({ player, listeners, canEnableYouTube: req.guildAccess!.source === 'bot-owner', youtubeEnabled: service.provider instanceof MusicSources && Boolean(service.provider.youtube), enabled: settings.modules.music, canRequest: req.guildAccess!.capabilities.includes('music.request'), canManage: req.guildAccess!.capabilities.includes('music.manage'),
+    const sameVoice = Boolean(player.channelId && (req.guildAccess!.canConfigure || actor?.voice.channelId === player.channelId));
+    const canManage = req.guildAccess!.capabilities.includes('music.manage');
+    res.json({ player, listeners, actorId: req.session.user!.id, inVoiceChannel: sameVoice,
+      canControlCurrent: sameVoice && Boolean(player.current) && (canManage || player.current?.requestedBy === req.session.user!.id),
+      removableEntryIds: sameVoice ? player.queue.filter(entry => canManage || entry.requestedBy === req.session.user!.id).map(entry => entry.id) : [], canEnableYouTube: req.guildAccess!.source === 'bot-owner', youtubeEnabled: service.provider instanceof MusicSources && Boolean(service.provider.youtube), enabled: settings.modules.music, canRequest: req.guildAccess!.capabilities.includes('music.request'), canManage: req.guildAccess!.capabilities.includes('music.manage'),
       channels: [...channels.values()].filter((entry) => entry !== null).filter((entry) => entry.type === ChannelType.GuildVoice && visible(entry, actor)).sort((a, b) => a.rawPosition - b.rawPosition).map((entry) => ({ id: entry.id, name: entry.name,
         canConnect: Boolean(entry.permissionsFor(me)?.has([P.ViewChannel, P.Connect, P.Speak])) && (!actor || Boolean(entry.permissionsFor(actor)?.has(P.Connect))) })) });
   });
@@ -66,14 +72,17 @@ export function musicRoutes(requireCapability: RequireCapability, service: Music
     const input = object(req.body, ['trackId', 'version']);
     res.json({ player: await service.enqueue(routeParam(req, 'guildId'), musicTrackId(input.trackId), req.session.user!.id, version(input.version), authorize(req)) });
   });
-  router.post('/control', requireCapability('music.manage'), async (req, res) => {
+  router.post('/control', requireMember, async (req, res) => {
     const input = object(req.body, ['action', 'version', 'value']);
     const action = text(input.action, 20);
     if (!['pause', 'resume', 'skip', 'stop', 'disconnect', 'volume', 'remove'].includes(action)) throw workflowError(400, 'Control de musica no valido.');
     if (action === 'volume' && (typeof input.value !== 'number' || !Number.isInteger(input.value) || input.value < 0 || input.value > 100)) throw workflowError(400, 'El volumen debe estar entre 0 y 100.');
     if (action === 'remove' && (typeof input.value !== 'string' || !/^[a-f\d-]{36}$/i.test(input.value))) throw workflowError(400, 'Identificador de cola no valido.');
     if (!['volume', 'remove'].includes(action) && input.value !== undefined) throw workflowError(400, 'Este control no admite un valor.');
-    res.json({ player: await service.control(routeParam(req, 'guildId'), action as Parameters<MusicService['control']>[1], version(input.version), authorize(req, undefined, action === 'disconnect'), input.value as number | string | undefined) });
+    res.json({ player: await service.control(routeParam(req, 'guildId'), action as Parameters<MusicService['control']>[1], version(input.version), async current => {
+      if (!req.guildAccess!.capabilities.includes('music.manage') && !ownsMusicControl(service.snapshot(req.managedGuild!.id), req.session.user!.id, action, input.value)) throw workflowError(403, 'Solo puedes controlar tus propias canciones. Los controles generales requieren permiso para gestionar musica.');
+      await authorize(req, undefined, action === 'disconnect')(current);
+    }, input.value as number | string | undefined) });
   });
   return router;
 }

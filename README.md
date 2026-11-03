@@ -116,7 +116,7 @@ El backend incorpora `@discordjs/voice` 0.19.2 (DAVE), `opusscript` y `ffmpeg-st
 Puesta en marcha:
 1. Reiniciar el backend para cargar GuildVoiceStates (no es un intent privilegiado).
 2. En Configuracion del servidor, habilitar Musica. Los documentos anteriores reciben `modules.music=false` al leerse; no se habilita automaticamente en gremios existentes.
-3. En Permisos internos, asignar Consultar musica (`music.read`), Solicitar canciones (`music.request`) y/o Controlar musica (`music.manage`). Solicitar incluye consulta; controlar incluye ambos. Los administradores nativos y el propietario global conservan su acceso completo.
+3. Todos los miembros pueden consultar la reproduccion y la cola de canales visibles. En Permisos internos, asignar Solicitar canciones (`music.request`) y/o Controlar musica (`music.manage`). Solicitar incluye consulta; controlar incluye ambos. Los administradores nativos y el propietario global conservan su acceso completo.
 4. Dar a Magelina Ver canal, Conectar y Hablar en el canal. Elegir un canal normal de voz desde Musica y conectar.
 5. Buscar una pista publica gratuita de Audius y agregarla. Un usuario delegado debe estar en el mismo canal; un administrador puede operar remotamente si tiene acceso al canal. Se excluyen Stage Channels.
 
@@ -140,7 +140,7 @@ El audio se obtiene solo de la ruta oficial de streaming del ID validado. Cada r
 Validacion: pruebas unitarias y HTTP con Discord simulado, consulta real de metadatos publicos de Audius, lectura del primer fragmento de un stream (HTTP 200, sin guardarlo) y codificacion local de una muestra sintetica FFmpeg/Opus. No se conecta automaticamente el bot a un canal real durante las pruebas. La verificacion final de audio en Discord requiere iniciar el backend y conectar desde la dashboard en un canal de pruebas.
 
 
-El monitor de Musica devuelve `player.positionMs` (posicion del recurso de audio) y `player.observedAt` en cada lectura, sin modificar la version de la cola. Tambien devuelve el numero de oyentes humanos del canal autorizado; se excluyen bots. La dashboard muestra portada, cancion, canal, solicitante, progreso aproximado, cola, tiempo pendiente y volumen. El progreso avanza localmente entre muestras y queda detenido durante la pausa; se refresca al recuperar el foco o la visibilidad de la pestana. El monitoreo requiere music.read y no concede controles adicionales.
+El monitor de Musica devuelve `player.positionMs` (posicion del recurso de audio) y `player.observedAt` en cada lectura, sin modificar la version de la cola. Tambien devuelve el numero de oyentes humanos del canal autorizado; se excluyen bots. La dashboard muestra portada, cancion, canal, solicitante, progreso aproximado, cola, tiempo pendiente y volumen. El progreso avanza localmente entre muestras y queda detenido durante la pausa; se refresca al recuperar el foco o la visibilidad de la pestana. El monitoreo verifica pertenencia al gremio y acceso al canal de voz; no requiere un rol de gestion. Los solicitantes pueden pausar, continuar o saltar su cancion actual y retirar sus propias entradas pendientes estando en el canal del bot. Volumen, vaciar la cola, conectar y desconectar requieren music.manage. Los mismos controles de propiedad se aplican a /musica pausar, continuar, saltar y retirar. /musica cola permite consultar sin permisos delegados.
 
 ### Recursos de la instancia
 

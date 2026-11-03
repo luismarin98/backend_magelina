@@ -1,3 +1,4 @@
+import { ownsMusicControl } from '../../../modules/music/ownership.js';
 import { t } from '../../../i18n/index.js';
 import { commandAccess } from '../../access.js';
 import { ChannelType, PermissionFlagsBits as P } from 'discord.js';
@@ -11,7 +12,8 @@ import type { SlashContext } from '../context.js';
 export async function prepareMusic(context: SlashContext) {
   const { i, config, member, command, requireCapability } = context;
   if (!i.guild) throw workflowError(400, 'Guild required.');
-  requireCapability(['agregar', 'youtube'].includes(command) ? 'music.request' : ['buscar', 'cola'].includes(command) ? 'music.read' : 'music.manage');
+  const ownActions: Record<string, string> = { pausar: 'pause', continuar: 'resume', saltar: 'skip', retirar: 'remove' };
+  if (command !== 'cola' && !ownActions[command]) requireCapability(['agregar', 'youtube'].includes(command) ? 'music.request' : ['buscar', 'cola'].includes(command) ? 'music.read' : 'music.manage');
   if (command !== 'desconectar') await requireModule(i.guild.id, 'music');
   const service = getMusicService(i.client);
   const state = service.snapshot(i.guild.id);
@@ -22,7 +24,7 @@ export async function prepareMusic(context: SlashContext) {
   const authorize = async (current: string | null) => {
     const fresh = await commandAccess(i, config);
     const capability = ['agregar', 'youtube'].includes(command) ? 'music.request' : 'music.manage';
-    if (!fresh.access.capabilities.includes(capability)) throw workflowError(403, t("Tus permisos del reproductor cambiaron."));
+    if (!fresh.access.capabilities.includes(capability) && !(ownActions[command] && ownsMusicControl(service.snapshot(i.guild!.id), i.user.id, ownActions[command], command === 'retirar' ? i.options.getString('entrada', true) : undefined))) throw workflowError(403, t("Tus permisos del reproductor cambiaron."));
     await assertAvailable(i.guild!.id);
     const channelId = command === 'conectar' ? member.voice.channelId : current;
     if (!channelId && command === 'desconectar') return;
