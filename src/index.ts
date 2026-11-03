@@ -21,6 +21,9 @@ import { WorkItem } from './database/models/WorkItem.js';
 import { KnowledgeArticle } from './database/models/KnowledgeArticle.js';
 import { GuildSettings } from './database/models/GuildSettings.js';
 import { GuildPolicy } from './database/models/GuildPolicy.js';
+import { SupportTicket } from './database/models/SupportTicket.js';
+import { SupportMessage } from './database/models/SupportMessage.js';
+import { SupportConfig } from './database/models/SupportConfig.js';
 
 let server: Server | undefined;
 let bot: Client | undefined;
@@ -75,6 +78,7 @@ try {
   await ModerationCase.init();
   await ModerationFollowup.init();
   await TeamSpace.init();
+  await Promise.all([SupportTicket.init(), SupportMessage.init(), SupportConfig.init()]);
   await Promise.all([Project.init(), CollaborationProfile.init(), Mentorship.init(), AutomationRule.init(), AutomationJob.init(), BotControl.init(), SystemEvent.init()]);
   startupStage = 'discord';
   if (!stopping) await bot.login(config.discordToken);

@@ -15,7 +15,7 @@ export function interactionRoute(interaction: Interaction): keyof InteractionHan
     return commandsByKey.get(commandKey(interaction.commandType, interaction.commandName))?.handler;
   }
   if (interaction.isModalSubmit() && interaction.customId.startsWith('request:')) return 'workflow';
-  if ((interaction.isButton() || interaction.isModalSubmit()) && interaction.customId.startsWith('support:')) return 'interactive';
+  if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('support:')) return 'interactive';
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('mgl:')) return 'interactive';
   if (interaction.isButton() && interaction.customId.startsWith('game:')) return 'games';
   return undefined;

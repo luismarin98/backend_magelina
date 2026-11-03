@@ -1,3 +1,4 @@
+import { SupportConfig } from '../src/database/models/SupportConfig.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -8,6 +9,7 @@ import type { guildAuthorization } from '../src/modules/permissions/access.js';
 import { channelRoutes } from '../src/modules/channels/routes.js';
 import { channelInput, privateOverwrites } from '../src/modules/channels/service.js';
 import { supportRoutes } from '../src/modules/support/routes.js';
+import { SupportMessage } from '../src/database/models/SupportMessage.js';
 import { SupportTicket } from '../src/database/models/SupportTicket.js';
 
 const adminId = '100000000000000088';
@@ -26,18 +28,19 @@ test('channel validation and private overwrites deny everyone and allow only sel
 
 test('HTTP channels and support enforce live permissions, case isolation and idempotency', async t => {
   let actorBits = 0n, botBits = P.Administrator, channelReadable = true, creations = 0, failSave = false;
-  let lastListFilter: any;
+  let lastListFilter: any, channelFetches = 0;
+  t.mock.method(SupportConfig, 'findOne', (() => ({ lean: async () => ({ categoryId: 'support-category' }) })) as never);
   const createdOptions: any[] = [], sent: any[] = [], records = new Map<string, any>();
   const channel = { id: '100000000000000007', name: 'soporte', type: ChannelType.GuildText,
     permissionsFor: () => new PermissionsBitField(channelReadable ? P.Administrator : 0n),
     send: async (payload: unknown) => { sent.push(payload); return { id: '100000000000000008' }; },
-    permissionOverwrites: { set: async () => {} },
+    setParent: async () => {}, setName: async () => {}, permissionOverwrites: { set: async () => {} },
     messages: { fetch: async () => new Collection([['message', { id: 'message', author: { username: 'Ana', globalName: 'Ana' }, content: 'Hola', createdAt: new Date(), createdTimestamp: Date.now(), url: 'https://discord.com/channels/a/b/c' }]]) },
   };
   const guild = { id: guildId, ownerId: '100000000000000099',
-    members: { fetchMe: async () => ({ id: botId, permissions: new PermissionsBitField(botBits) }), fetch: async ({ user }: { user: string }) => ({ id: user, user: { bot: false }, permissions: new PermissionsBitField(user === adminId ? P.Administrator : [moderatorId, otherId].includes(user) ? P.ModerateMembers : actorBits) }) },
+    members: { fetchMe: async () => ({ id: botId, permissions: new PermissionsBitField(botBits) }), fetch: async ({ user }: { user: string }) => ({ id: user, displayName: 'Ana', user: { bot: false, username: 'ana' }, permissions: new PermissionsBitField(user === adminId ? P.Administrator : [moderatorId, otherId].includes(user) ? P.ModerateMembers : actorBits) }) },
     roles: { fetch: async () => new Collection([[guildId, { id: guildId, permissions: new PermissionsBitField(0n) }], [staffRoleId, { id: staffRoleId, permissions: new PermissionsBitField(P.ModerateMembers) }]]) },
-    channels: { fetch: async (id?: string) => id ? channel : new Collection([[channel.id, channel]]), create: async (options: unknown) => { creations++; createdOptions.push(options); return channel; } },
+    channels: { fetch: async (id?: string) => { channelFetches++; return id === 'support-category' ? { id, type: ChannelType.GuildCategory } : id ? channel : new Collection([[channel.id, channel]]); }, create: async (options: unknown) => { creations++; createdOptions.push(options); return channel; } },
   } as unknown as Guild;
   t.mock.method(SupportTicket, 'find', ((filter: any) => (lastListFilter = filter, { sort: () => ({ limit: () => ({ lean: async () => [...records.values()].filter(row => row.guildId === filter.guildId && (!filter.requesterId || row.requesterId === filter.requesterId) && (!filter.$or || filter.$or.some((condition: any) => Object.entries(condition).every(([key, value]) => row[key] === value)))) }) }) })) as never);
   t.mock.method(SupportTicket, 'findOne', ((filter: any) => {
@@ -59,6 +62,7 @@ test('HTTP channels and support enforce live permissions, case isolation and ide
     assert.equal(pipeline[0].$match.active, true);
     return [{ groups: [{ _id: moderatorId, pendingCount: 25, awaitingReview: 0, escalatedCount: 2, oldestAt: new Date() }], total: [{ count: 1 }] }];
   }) as never);
+  t.mock.method(SupportMessage, 'find', (() => ({ sort: () => ({ limit: () => ({ lean: async () => Array.from({ length: 51 }, (_, index) => ({ messageId: String(200000000000000120n - BigInt(index)), author: 'Ana', content: 'Archivado', createdAt: new Date(), embeds: [], stickers: [], attachments: [] })) }) }) })) as never);
   const app = express(); app.use(express.json()); app.use(session({ secret: 'only-test', resave: false, saveUninitialized: false }));
   const access = { requireMember: (req, _res, next) => { req.managedGuild = guild; req.guildAccess = { canConfigure: false, capabilities: [], source: 'delegated' }; req.session.user = { id: req.get('x-user') ?? userId, username: 'ana', name: 'Ana' }; next(); } } as ReturnType<typeof guildAuthorization>;
   app.use('/guilds/:guildId/channels', channelRoutes(access)); app.use('/guilds/:guildId/support', supportRoutes(access));
@@ -102,6 +106,8 @@ test('HTTP channels and support enforce live permissions, case isolation and ide
     assert.equal((await write(ticketPath, { action: 'assign', version: 0, assigneeId: userId }, 'PATCH', adminId)).status, 400);
     assert.equal((await write(ticketPath, { action: 'assign', version: 0, assigneeId: moderatorId }, 'PATCH', adminId)).status, 200);
     assert.equal(creations, 3);
+    assert.equal(createdOptions[2].parent, 'support-category');
+    assert.match(createdOptions[2].name, /^soporte-ana-consulta-/);
     assert.ok(createdOptions[2].permissionOverwrites.some((row: any) => row.id === moderatorId));
     assert.equal(createdOptions[2].permissionOverwrites.some((row: any) => row.id === staffRoleId), false);
     assert.equal((await fetch(base + ticketPath + '/messages', { headers: { 'x-user': otherId } })).status, 404);
@@ -116,6 +122,20 @@ test('HTTP channels and support enforce live permissions, case isolation and ide
     assert.equal((await write(ticketPath, { action: 'close', version: 2 }, 'PATCH', adminId)).status, 200);
     assert.equal((await write(ticketPath + '/messages', { content: 'Otro mensaje' })).status, 409);
     assert.equal(records.get(item._id).active, false);
+    const resolvedList = await fetch(base + `/support?state=closed&active=true&assigneeId=${moderatorId}`, { headers: { 'x-user': adminId } });
+    assert.equal(resolvedList.status, 200); assert.equal(lastListFilter.state, 'closed'); assert.equal('active' in lastListFilter, false); assert.equal(lastListFilter.assigneeId, moderatorId);
+    assert.equal((await resolvedList.json()).items[0].state, 'closed');
+    await fetch(base + `/support?state=closed&active=true&requesterId=${userId}`, { headers: { 'x-user': adminId } });
+    assert.equal(lastListFilter.requesterId, userId); assert.equal('active' in lastListFilter, false);
+
+    assert.equal((await write(ticketPath + '/archive-channel', { version: 3 })).status, 403);
+    Object.assign(records.get(item._id), { transcriptArchivedAt: new Date(), transcriptRunId: 'run', transcriptMessageCount: 120, channelDeletedAt: new Date() });
+    const previousFetches = channelFetches;
+    const archive = await fetch(base + ticketPath + '/messages'); assert.equal(archive.status, 200);
+    const transcript = await archive.json(); assert.equal(transcript.source, 'archive'); assert.equal(transcript.messages.length, 50); assert.ok(transcript.nextCursor);
+    assert.equal(channelFetches, previousFetches);
+    assert.equal((await fetch(base + ticketPath + '/messages', { headers: { 'x-user': otherId } })).status, 404);
+    assert.equal((await fetch(base + ticketPath + '/attachments/100000000000000050', { headers: { 'x-user': otherId } })).status, 404);
     failSave = true;
     const ambiguous = { ...request, requestId: '32345678-1234-4234-8234-123456789abc' };
     const pending = await (await write('/support', ambiguous)).json();

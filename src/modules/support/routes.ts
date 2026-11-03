@@ -1,3 +1,4 @@
+import { reportTypes } from './report-types.js';
 import { Router, type Request } from 'express';
 import { ChannelType, PermissionFlagsBits as P } from 'discord.js';
 import { SupportTicket } from '../../database/models/SupportTicket.js';
@@ -10,6 +11,10 @@ import { SupportConfig } from '../../database/models/SupportConfig.js';
 import { publishSupportPanel } from './panel.js';
 import { hasCode } from '../../types/errors.js';
 import { supportOverviewPipeline } from './overview.js';
+import { archiveAndDeleteChannel, transcriptFiles } from './transcript.js';
+import { SupportMessage } from '../../database/models/SupportMessage.js';
+import { ObjectId } from 'mongodb';
+import { pipeline } from 'node:stream/promises';
 
 async function context(req: Request) {
   return supportContext(req.managedGuild!, req.session.user!.id, req.guildAccess!.source === 'bot-owner');
@@ -38,8 +43,9 @@ export function supportRoutes(access: ReturnType<typeof guildAuthorization>) {
     const requesterId = req.query.requesterId === undefined ? undefined : id(req.query.requesterId, true);
     if ((assigneeId || requesterId) && !ctx.canAdmin) throw workflowError(403, 'Solo un administrador puede consultar pendientes por persona.');
     if (req.query.active !== undefined && req.query.active !== 'true') throw workflowError(400, 'Filtro de pendientes no válido.');
-    const items = await SupportTicket.find({ guildId, ...ticketScope(req.session.user!.id, ctx), ...(req.query.active ? { active: true, state: { $ne: 'closed' } } : {}), ...(state ? { state } : {}), ...(assigneeId ? { assigneeId } : {}), ...(requesterId ? { requesterId } : {}), ...cursor(req.query.before) }).sort({ _id: -1 }).limit(21).lean();
-    res.json({ ...page(items, 20), canModerate: ctx.canModerate, canAdmin: ctx.canAdmin, canRequest: true });
+    const activeOnly = req.query.active === 'true' && state !== 'closed';
+    const items = await SupportTicket.find({ guildId, ...ticketScope(req.session.user!.id, ctx), ...(activeOnly ? { active: true, state: { $ne: 'closed' } } : {}), ...(state ? { state } : {}), ...(assigneeId ? { assigneeId } : {}), ...(requesterId ? { requesterId } : {}), ...cursor(req.query.before) }).sort({ _id: -1 }).limit(21).lean();
+    res.json({ ...page(items, 20), canModerate: ctx.canModerate, canAdmin: ctx.canAdmin, canRequest: true, reportTypes });
   });
   router.get('/overview', async (req, res) => {
     const ctx = await context(req), guild = req.managedGuild!;
@@ -60,7 +66,7 @@ export function supportRoutes(access: ReturnType<typeof guildAuthorization>) {
   router.get('/help', async (req, res) => {
     const ctx = await context(req), config = await supportConfig(req.managedGuild!.id);
     const channels = ctx.canModerate ? [...(await req.managedGuild!.channels.fetch()).values()].filter(channel => channel && channel.type === ChannelType.GuildText && (!ctx.actor || channel.permissionsFor(ctx.actor)?.has(channel.id === config.panelChannelId ? [P.ViewChannel] : [P.ViewChannel, P.SendMessages]))).map(channel => ({ id: channel!.id, name: channel!.name })) : [];
-    res.json({ version: config.version, faqs: config.faqs.map(faq => ({ question: faq.question, answer: faq.answer })), panelChannelId: config.panelChannelId, panelMessageId: config.panelMessageId, canManage: ctx.canModerate, channels });
+    res.json({ version: config.version, faqs: config.faqs.map(faq => ({ question: faq.question, answer: faq.answer })), categoryId: config.categoryId, panelChannelId: config.panelChannelId, panelMessageId: config.panelMessageId, canManage: ctx.canModerate, channels });
   });
   router.patch('/help', async (req, res) => {
     const ctx = await context(req);
@@ -111,9 +117,35 @@ export function supportRoutes(access: ReturnType<typeof guildAuthorization>) {
     res.json({ item });
   });
   router.get('/:ticketId/messages', async (req, res) => {
-    const { ctx, ticket } = await visibleTicket(req), channel = await ticketChannel(req, ticket, ctx);
+    const { ctx, ticket } = await visibleTicket(req);
+    if (ticket.transcriptArchivedAt && ticket.transcriptRunId) {
+      const before = req.query.before === undefined ? undefined : id(req.query.before, true);
+      const messages = await SupportMessage.find({ guildId: req.managedGuild!.id, ticketId: ticket._id, runId: ticket.transcriptRunId, ...(before ? { messageOrder: { $lt: before } } : {}) }).sort({ messageOrder: -1 }).limit(51).lean();
+      const more = messages.length > 50; if (more) messages.pop();
+      const nextCursor = more ? messages.at(-1)!.messageId : null;
+      res.json({ source: 'archive', archivedAt: ticket.transcriptArchivedAt, total: ticket.transcriptMessageCount, nextCursor, messages: messages.reverse().map(message => ({ id: message.messageId, channelId: message.channelId, channelName: message.channelName, author: message.author, content: message.content, createdAt: message.createdAt.toISOString(), url: '', embeds: message.embeds, stickers: message.stickers, attachments: message.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, size: attachment.size, url: `/guilds/${req.managedGuild!.id}/support/${ticket._id}/attachments/${attachment.id}` })) })) }); return;
+    }
+    if (ticket.state === 'closed' && !ticket.channelId) { res.json({ source: 'archive', total: 0, nextCursor: null, messages: [] }); return; }
+    const channel = await ticketChannel(req, ticket, ctx);
     const messages = await channel.messages.fetch({ limit: 50 });
-    res.json({ messages: [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp).map(message => ({ id: message.id, author: message.author.globalName ?? message.author.username, content: message.content, createdAt: message.createdAt.toISOString(), url: message.url })) });
+    res.json({ source: 'discord', messages: [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp).map(message => ({ id: message.id, author: message.author.globalName ?? message.author.username, content: message.content, createdAt: message.createdAt.toISOString(), url: message.url, embeds: message.embeds.map(embed => embed.toJSON()), attachments: [...message.attachments.values()].map(attachment => ({ id: attachment.id, name: attachment.name, size: attachment.size, url: attachment.url })) })) });
+  });
+  router.post('/:ticketId/archive-channel', async (req, res) => {
+    const { ctx, ticket } = await visibleTicket(req), input = object(req.body, ['version']);
+    res.json({ item: await archiveAndDeleteChannel(req.managedGuild!, req.session.user!.id, ctx, ticket, version(input.version)) });
+  });
+  router.get('/:ticketId/attachments/:attachmentId', async (req, res) => {
+    const { ticket } = await visibleTicket(req), attachmentId = id(routeParam(req, 'attachmentId'), true);
+    if (!ticket.transcriptArchivedAt || !ticket.transcriptRunId) throw workflowError(404, 'Adjunto archivado no encontrado.');
+    const message = await SupportMessage.findOne({ guildId: req.managedGuild!.id, ticketId: ticket._id, runId: ticket.transcriptRunId, 'attachments.id': attachmentId }).lean();
+    const attachment = message?.attachments.find(entry => entry.id === attachmentId);
+    if (!attachment?.storageId || !ObjectId.isValid(attachment.storageId)) throw workflowError(404, 'Adjunto no encontrado.');
+    const bucket = transcriptFiles(), fileId = new ObjectId(attachment.storageId);
+    const file = await bucket.find({ _id: fileId, 'metadata.guildId': req.managedGuild!.id, 'metadata.ticketId': String(ticket._id) }).next();
+    if (!file) throw workflowError(404, 'Archivo no encontrado.');
+    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': String(file.length), 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(attachment.name ?? 'adjunto')}`, 'X-Content-Type-Options': 'nosniff' });
+    try { await pipeline(bucket.openDownloadStream(fileId), res); }
+    catch (cause) { if (!res.headersSent) throw cause; res.destroy(); }
   });
   router.post('/:ticketId/messages', async (req, res) => {
     const { ctx, ticket } = await visibleTicket(req);
