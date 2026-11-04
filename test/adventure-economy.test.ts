@@ -9,9 +9,9 @@ import { baseItems, craft, positiveInteger, changeCoins, changeStack, ECONOMY } 
 
 test('crafting validates entire recipe before consuming materials, bounds quantities and protects balances', () => {
   const stacks = new Map([['wood', 2], ['herb', 1]]);
-  assert.throws(() => craft(stacks, baseItems[2]!, 1)); assert.equal(stacks.get('wood'), 2);
+  assert.throws(() => craft(stacks, baseItems.find(item => item.id === 'wooden-charm')!, 1)); assert.equal(stacks.get('wood'), 2);
   stacks.set('herb', 2);
-  const output = craft(stacks, baseItems[2]!, 1);
+  const output = craft(stacks, baseItems.find(item => item.id === 'wooden-charm')!, 1);
   assert.deepEqual([...output], [['wooden-charm', 1]]); assert.equal(stacks.get('wood'), 2);
   for (const quantity of [0, -1, 1.5, NaN, Infinity, '1', 101]) assert.throws(() => positiveInteger(quantity));
   assert.throws(() => changeCoins(0, -1)); assert.throws(() => changeCoins(ECONOMY.maxCoins, 1));
@@ -103,6 +103,14 @@ test('economy transfers escrow and money atomically, replays retries, and reject
   await operation('carol', 'sell', { itemId: 'wood', quantity: 2 }, saleKey);
   assert.equal(balance('carol'), before + 4); assert.equal(bag('carol').has('wood'), false);
   await assert.rejects(operation('carol', 'sell', { itemId: 'wood', quantity: -1 }), /entero/);
+  const archivedId = 'abcdefabcdefabcdefabcdef', archivedItemId = `design:${archivedId}`;
+  state.designs.push({ _id: archivedId, name: 'Corona retirada', icon: 'crown', status: 'approved', category: 'cosmetic', archived: true });
+  changeStack(bag('alice'), archivedItemId, 1);
+  await assert.rejects(operation('alice', 'craft', { itemId: archivedItemId, quantity: 1 }), /receta/);
+  assert.equal(bag('alice').get(archivedItemId), 1);
+  const archivedBalance = balance('alice');
+  await operation('alice', 'sell', { itemId: archivedItemId, quantity: 1 });
+  assert.equal(balance('alice'), archivedBalance + 5);
   const traveller = find('characters', { userId: 'alice' });
   const versionBefore = traveller.version;
   find('configs', { guildId: otherCountry }).integration = { enabled: true, announceArrivals: true, categoryId: 'category', channelId: 'channel' };

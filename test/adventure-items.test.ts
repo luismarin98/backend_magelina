@@ -33,7 +33,7 @@ test('private item drafts, global cosmetic review and image visibility enforce o
   const creator = '100000000000000001', visitor = '100000000000000002', guildId = '100000000000000003';
   let actorId = creator, owner = false, registered = true;
   const records = new Map<string, any>();
-  const matches = (row: any, filter: any): boolean => Object.entries(filter).every(([field, value]: [string, any]) => field === '$or' ? value.some((part: any) => matches(row, part)) : value && typeof value === 'object' && '$in' in value ? value.$in.includes(row[field]) : value && typeof value === 'object' && '$lt' in value ? row[field] < value.$lt : row[field] === value);
+  const matches = (row: any, filter: any): boolean => Object.entries(filter).every(([field, value]: [string, any]) => field === '$or' ? value.some((part: any) => matches(row, part)) : value && typeof value === 'object' && '$ne' in value ? row[field] !== value.$ne : value && typeof value === 'object' && '$in' in value ? value.$in.includes(row[field]) : value && typeof value === 'object' && '$lt' in value ? row[field] < value.$lt : row[field] === value);
   for (const model of [AdventureCharacter, AdventureMembership]) t.mock.method(model, 'findOne', (() => ({ lean: async () => registered ? ({ userId: actorId, guildId }) : null })) as never);
   t.mock.method(AdventureItem, 'create', (async (fields: any) => { const row = { ...fields, _id: String(records.size + 1).padStart(24, '0'), status: 'draft', version: 0, hasImage: Boolean(fields.imageData), reviewReason: null }; records.set(row._id, row); return row; }) as never);
   t.mock.method(AdventureItem, 'find', ((filter: any) => ({ sort: () => ({ limit: (limit: number) => ({ lean: async () => [...records.values()].filter(row => matches(row, filter)).reverse().slice(0, limit) }) }) })) as never);
@@ -60,7 +60,7 @@ test('private item drafts, global cosmetic review and image visibility enforce o
     assert.equal((await write(`/${item._id}/submit`, { version: 0 })).status, 409);
     actorId = creator;
     assert.equal((await write(`/${item._id}/submit`, { version: 0 })).status, 200);
-    assert.equal((await write(`/${item._id}`, { ...fields, version: 1 }, 'PATCH')).status, 409);
+    assert.equal((await write(`/${item._id}`, { ...fields, version: 0 }, 'PATCH')).status, 409);
     assert.equal((await write(`/${item._id}/review`, { decision: 'approved', version: 1 })).status, 403);
     owner = true; actorId = visitor; registered = false;
     assert.equal((await (await fetch(base + '?mode=review')).json()).items.length, 1);
@@ -79,5 +79,23 @@ test('private item drafts, global cosmetic review and image visibility enforce o
     assert.equal((await write(`/${revision._id}/review`, { decision: 'rejected', reason: 'Revisa el nombre', version: 1 })).status, 200);
     owner = false; actorId = creator;
     const revised = await write(`/${revision._id}`, { ...fields, name: 'Corona revisada', version: 2 }, 'PATCH'); assert.equal(revised.status, 200); assert.equal((await revised.json()).item.status, 'draft');
+    actorId = visitor;
+    assert.equal((await write(`/${revision._id}`, { version: 3 }, 'DELETE')).status, 409);
+    actorId = creator;
+    assert.equal((await write(`/${revision._id}`, { version: 2 }, 'DELETE')).status, 409);
+    assert.equal((await write(`/${revision._id}`, { version: 3 }, 'DELETE')).status, 200);
+    assert.equal(records.get(revision._id).archived, true);
+    assert.equal((await write(`/${revision._id}`, { ...fields, version: 4 }, 'PATCH')).status, 409);
+    assert.equal((await write(`/${revision._id}/submit`, { version: 4 })).status, 409);
+    const pending = (await (await write('', fields)).json()).item;
+    await write(`/${pending._id}/submit`, { version: 0 });
+    const withdrawn = await write(`/${pending._id}`, { ...fields, name: 'Nuevo nombre', version: 1 }, 'PATCH');
+    assert.equal(withdrawn.status, 200); assert.equal((await withdrawn.json()).item.status, 'draft');
+    assert.equal((await write(`/${item._id}`, { version: 2 }, 'DELETE')).status, 200);
+    assert.equal(records.get(item._id).status, 'approved'); // Existing inventory references retain their definition.
+    assert.equal((await (await fetch(base + '?mode=catalog')).json()).items.length, 0);
+    const mine = await (await fetch(base)).json();
+    assert.equal(mine.items.some((entry: any) => entry._id === item._id || entry._id === revision._id), false);
+
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });

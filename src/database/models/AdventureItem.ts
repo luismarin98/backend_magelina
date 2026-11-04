@@ -11,6 +11,7 @@ const schema = new mongoose.Schema({
   hasImage: { type: Boolean, default: false },
   status: { type: String, enum: ['draft', 'submitted', 'approved', 'rejected'], default: 'draft' },
   reviewReason: { type: String, default: null, maxlength: 600 },
+  archived: { type: Boolean, default: false },
   version: { type: Number, default: 0 },
   history: { type: [{ actorId: String, action: String, reason: String, at: Date }], default: [] },
 }, { timestamps: true });

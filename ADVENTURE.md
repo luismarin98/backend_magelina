@@ -117,3 +117,32 @@ Cerrar el navegador no reinicia el reloj de la etapa actual; las siguientes etap
 Interfaz: **Mi aventura > Aventuras del gremio**, y **Gremio de aventureros > Ver aventuras del gremio** mediante modal. El contador se actualiza localmente y la consulta compartida de Redux se comprueba cada 15 segundos mientras está visible. La interfaz exige confirmación para iniciar o abandonar y conserva la clave de una solicitud incierta al reintentar. El bot genera propuestas; nunca acepta aventuras ni decide por un usuario.
 
 Prueba optativa real: `test/adventure-expeditions.mongo.test.ts`, con `ADVENTURE_EXPEDITION_MONGO_TEST=1`. Crea y elimina únicamente colecciones aisladas con prefijo aleatorio `tmp_exp_`, comprobando aceptaciones/decisiones/recompensas concurrentes, restricciones de espera, privacidad, reversión ante fallos y abandono sin premios.
+
+
+### Encuentros durante las aventuras
+
+Al aceptar un encargo se guardan sus encuentros y probabilidades junto al recorrido. Cada etapa tiene un 45 % de posibilidad de incluir un enemigo narrativo. Los recorridos aceptados anteriormente conservan sus decisiones originales.
+
+- Combatir: probabilidad entre 35 y 90 %, calculada al partir con el nivel del personaje y del enemigo. Victoria: 3 materiales de la etapa y 12 XP pendientes. Derrota: cada recompensa pendiente se reduce a la mitad, redondeando hacia abajo, y el recorrido sigue.
+- Evitar: 80 % de continuar con 4 XP pendientes. Fallar termina el encargo (`failed`) y descarta las recompensas pendientes.
+- Retirarse: usa el abandono con confirmación. No entrega recompensas ni reinicia el descanso.
+
+Los resultados usan la semilla privada persistente. Las decisiones requieren versión, idempotencia y transacción. Nunca se descuentan objetos, monedas o experiencia previamente acreditados. No hay decisiones automáticas ni penalización por desconectarse. El dashboard muestra las probabilidades cuando la etapa está lista; los encuentros futuros no se incluyen en el DTO.
+
+Este cambio no introduce todavía ascensos de rango, categorías de riesgo ni reemplaza la generación del tablón por país.
+
+
+### Botín con iconos
+
+Las victorias contra enemigos añaden objetos pendientes persistidos en `AdventureRun.loot` y en el evento correspondiente. La tirada HMAC depende de la semilla privada y de la etapa; el cliente nunca elige objetos ni cantidades. Animales: pieles o colmillos; bandidos: metal (60 %), espada recuperada (30 %) o escudo recuperado (10 %). Materiales: 1 a 2 unidades; equipo: 1 unidad.
+
+El DTO incluye nombre, icono y cantidad para Redux y el historial. Los SVG existentes se sirven localmente. El inventario recibe los objetos una sola vez, en la misma transacción de cobro que los materiales y XP. Una derrota al combatir reduce cada pila pendiente a la mitad; fallar la evasón o abandonar descarta el botín. Los eventos conservan lo encontrado originalmente, mientras la lista pendiente refleja lo que queda. Si falta espacio, el cobro completo se revierte y puede reintentarse tras liberar inventario.
+
+Las espadas y escudos recuperados son comerciables; equiparlos y aplicar bonificaciones de combate queda pendiente.
+
+
+### Edición y retirada de diseños
+
+El creador puede editar borradores, propuestas rechazadas y propuestas pendientes (estas vuelven a borrador y requieren nuevo envío). Los aprobados permiten crear un nuevo borrador de revisión desde el dashboard, conservando intacta la definición aprobada. Cada mutación valida autoría y versión.
+
+`DELETE /guilds/:guildId/adventure/items/:itemId`, con `{version}`, archiva el diseño y registra la acción en el historial. Desaparece de las listas y recetas; no admite edición, envío ni aprobación posterior. Los objetos aprobados ya fabricados mantienen su definición y pueden comerciarse, pero no fabricarse nuevamente. La interfaz solicita confirmación antes de retirarlo.

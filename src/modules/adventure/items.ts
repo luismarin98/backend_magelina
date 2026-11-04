@@ -25,13 +25,13 @@ export function adventureItemRoutes() {
     next();
   });
   const reviewer = (req: Parameters<import('express').RequestHandler>[0]) => req.guildAccess?.source === 'bot-owner';
-  const dto = (item: any, userId: string) => ({ _id: String(item._id), name: item.name, description: item.description, category: item.category, icon: item.icon, hasImage: item.hasImage, status: item.status, version: item.version, reviewReason: item.status === 'rejected' ? item.reviewReason : null, canEdit: item.creatorId === userId && ['draft', 'rejected'].includes(item.status) });
+  const dto = (item: any, userId: string) => ({ _id: String(item._id), name: item.name, description: item.description, category: item.category, icon: item.icon, hasImage: item.hasImage, status: item.status, version: item.version, reviewReason: item.status === 'rejected' ? item.reviewReason : null, canEdit: item.creatorId === userId && ['draft', 'rejected', 'submitted'].includes(item.status), canDelete: item.creatorId === userId, canRevise: item.creatorId === userId && item.status === 'approved' });
   router.get('/', async (req, res) => {
     const mode = req.query.mode ?? 'mine';
     if (!['mine', 'catalog', 'review'].includes(String(mode))) throw workflowError(400, 'Vista de objetos no válida.');
     if (mode === 'review' && !reviewer(req)) throw workflowError(403, 'La revisión global está reservada al propietario de Magelina.');
     const filter = mode === 'mine' ? { creatorId: req.session.user!.id } : { status: mode === 'catalog' ? 'approved' : 'submitted' };
-    const result = page(await AdventureItem.find({ ...filter, ...cursor(req.query.before) }).sort({ _id: -1 }).limit(11).lean(), 10);
+    const result = page(await AdventureItem.find({ ...filter, archived: { $ne: true }, ...cursor(req.query.before) }).sort({ _id: -1 }).limit(11).lean(), 10);
     res.json({ items: result.items.map(item => dto(item, req.session.user!.id)), nextCursor: result.nextCursor, canReview: reviewer(req) });
   });
   router.get('/:itemId/image', async (req, res) => {
@@ -46,13 +46,20 @@ export function adventureItemRoutes() {
   });
   router.patch('/:itemId', async (req, res) => {
     const fields = itemInput(req.body);
-    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), creatorId: req.session.user!.id, status: { $in: ['draft', 'rejected'] }, version: version(req.body.version) }, { $set: { ...fields, status: 'draft', reviewReason: null }, $unset: { imageData: 1 }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: 'edited', at: new Date() } } }, { new: true, runValidators: true });
+    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), creatorId: req.session.user!.id, archived: { $ne: true }, status: { $in: ['draft', 'rejected', 'submitted'] }, version: version(req.body.version) }, { $set: { ...fields, status: 'draft', reviewReason: null }, $unset: { imageData: 1 }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: 'edited', at: new Date() } } }, { new: true, runValidators: true });
     if (!item) throw workflowError(409, 'El diseño cambió, no te pertenece o ya está en revisión.');
     res.json({ item: dto(item, req.session.user!.id) });
   });
+  router.delete('/:itemId', async (req, res) => {
+    const input = object(req.body, ['version']);
+    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), creatorId: req.session.user!.id, archived: { $ne: true }, version: version(input.version) },
+      { $set: { archived: true }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: 'archived', at: new Date() } } }, { new: true });
+    if (!item) throw workflowError(409, 'El dise\u00f1o cambi\u00f3, no te pertenece o ya fue eliminado.');
+    res.json({ deleted: true });
+  });
   router.post('/:itemId/submit', async (req, res) => {
     const input = object(req.body, ['version']);
-    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), creatorId: req.session.user!.id, category: 'cosmetic', status: 'draft', version: version(input.version) }, { $set: { status: 'submitted' }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: 'submitted', at: new Date() } } }, { new: true });
+    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), creatorId: req.session.user!.id, archived: { $ne: true }, category: 'cosmetic', status: 'draft', version: version(input.version) }, { $set: { status: 'submitted' }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: 'submitted', at: new Date() } } }, { new: true });
     if (!item) throw workflowError(409, 'Solo se pueden enviar borradores cosméticos propios y actualizados.');
     res.json({ item: dto(item, req.session.user!.id) });
   });
@@ -61,7 +68,7 @@ export function adventureItemRoutes() {
     const input = object(req.body, ['version', 'decision', 'reason']);
     if (!['approved', 'rejected'].includes(String(input.decision))) throw workflowError(400, 'Decisión no válida.');
     const reason = input.decision === 'rejected' ? text(input.reason, 600) : null;
-    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), category: 'cosmetic', status: 'submitted', version: version(input.version) }, { $set: { status: input.decision, reviewReason: reason }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: input.decision, reason, at: new Date() } } }, { new: true, runValidators: true });
+    const item = await AdventureItem.findOneAndUpdate({ _id: id(routeParam(req, 'itemId')), archived: { $ne: true }, category: 'cosmetic', status: 'submitted', version: version(input.version) }, { $set: { status: input.decision, reviewReason: reason }, $inc: { version: 1 }, $push: { history: { actorId: req.session.user!.id, action: input.decision, reason, at: new Date() } } }, { new: true, runValidators: true });
     if (!item) throw workflowError(409, 'La propuesta cambió o ya fue revisada.');
     res.json({ item: dto(item, req.session.user!.id) });
   });

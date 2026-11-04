@@ -24,7 +24,7 @@ async function spec(itemId: string, session?: mongoose.ClientSession, designs = 
   if (!/^design:[a-f\d]{24}$/.test(itemId)) throw workflowError(400, 'Objeto desconocido.');
   const design = await designs.findOne({ _id: itemId.slice(7), status: 'approved', category: 'cosmetic' }).session(session ?? null).lean();
   if (!design) throw workflowError(409, 'El diseño debe ser un cosmético aprobado.');
-  return { id: itemId, name: design.name, icon: design.icon, category: 'Cosmético', sellPrice: 5, ingredients: { wood: 2, herb: 2 } };
+  return { id: itemId, name: design.name, icon: design.icon, category: 'Cosmético', sellPrice: 5, ingredients: design.archived ? undefined : { wood: 2, herb: 2 } };
 }
 export const economyModels = { AdventureConfig, AdventureMembership, AdventureCharacter, AdventureItem, AdventureInventory, AdventureListing, AdventureReceipt };
 export async function economyOperation(userId: string, action: string, input: Record<string, unknown>, models = economyModels, world?: WorldAccess) {
@@ -161,7 +161,7 @@ export function economyRoutes(world?: WorldAccess) {
       }), recipes: baseItems.filter(item => item.ingredients), limits: ECONOMY });
   });
   router.get('/recipes', async (req, res) => {
-    const result = page(await AdventureItem.find({ status: 'approved', category: 'cosmetic', ...cursor(req.query.before) }).sort({ _id: -1 }).limit(11).lean(), 10);
+    const result = page(await AdventureItem.find({ status: 'approved', archived: { $ne: true }, category: 'cosmetic', ...cursor(req.query.before) }).sort({ _id: -1 }).limit(11).lean(), 10);
     res.json({ items: result.items.map(item => ({ id: `design:${item._id}`, name: item.name, icon: item.icon, category: 'Cosmético', sellPrice: 5, ingredients: { wood: 2, herb: 2 } })), nextCursor: result.nextCursor });
   });
   router.get('/market', async (req, res) => {

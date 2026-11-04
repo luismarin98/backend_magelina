@@ -8,8 +8,8 @@ import { id, object, text, version } from '../common/input.js';
 import { workflowError } from '../workflow/rules.js';
 import { hasCode } from '../../types/errors.js';
 import { assertAvailable } from '../operations/service.js';
-import { changeStack } from './economy-rules.js';
-import { resolveExpeditionStep, type ExpeditionDefinition } from './expedition-rules.js';
+import { baseItems, changeStack } from './economy-rules.js';
+import { prepareEncounters, rollEnemyLoot, resolveEnemyEncounter, resolveExpeditionStep, type ExpeditionDefinition } from './expedition-rules.js';
 import type { WorldAccess } from './world.js';
 
 export const expeditionModels = { AdventureCharacter, AdventureConfig, AdventureMembership, AdventureOffer, AdventureRun, AdventureInventory, AdventureReceipt };
@@ -50,7 +50,9 @@ export async function expeditionOperation(userId: string, action: string, input:
         const config = await AdventureConfig.findOne({ guildId: offer.guildId, enabled: true }).session(session).lean();
         if (!config || !await AdventureMembership.findOne({ userId, guildId: offer.guildId }).session(session).lean()) throw workflowError(403, 'El gremio debe estar habilitado y debes estar inscrito.');
         await AdventureConfig.updateOne({ _id: config._id }, { $inc: { commerceRevision: 1 } }, { session });
-        const [run] = await AdventureRun.create([{ userId, guildId: offer.guildId, offerId: String(offer._id), definition, seed: randomBytes(32).toString('hex'), dueAt: new Date(now.getTime() + definition.steps[0]!.seconds * 1000) }], { session });
+        const seed = randomBytes(32).toString('hex');
+        const snapshot = prepareEncounters(definition, seed, character.level);
+        const [run] = await AdventureRun.create([{ userId, guildId: offer.guildId, offerId: String(offer._id), definition: snapshot, seed, dueAt: new Date(now.getTime() + definition.steps[0]!.seconds * 1000) }], { session });
         character.activeAdventureId = String(run!._id);
         character.nextAdventureAt = new Date(now.getTime() + definition.steps.reduce((sum, step) => sum + step.seconds, 0) * 1000);
         character.version++;
@@ -64,12 +66,24 @@ export async function expeditionOperation(userId: string, action: string, input:
         if (action === 'decide') {
           if (run.status !== 'active' || run.dueAt > now) throw workflowError(409, 'La siguiente etapa aún no está lista.');
           const step = definition.steps[run.stage]!;
-          const outcome = resolveExpeditionStep(run.seed, run.stage, input.choice);
+          const outcome = step.encounter ? resolveEnemyEncounter(run.seed, run.stage, input.choice, step.encounter) : resolveExpeditionStep(run.seed, run.stage, input.choice);
+          if ('success' in outcome && !outcome.success) {
+            for (const material of ['wood', 'herb', 'experience'] as const) run.rewards![material] = Math.floor(run.rewards![material] / 2);
+            run.set('loot', run.loot.map(item => ({ itemId: item.itemId, quantity: Math.floor(item.quantity / 2) })).filter(item => item.quantity > 0));
+          }
           run.rewards![step.material] += outcome.quantity;
           run.rewards!.experience += outcome.experience;
-          run.events.push({ stage: run.stage, choice: outcome.choice, text: outcome.event, at: now });
+          const loot = step.encounter && outcome.choice === 'fight' && 'success' in outcome && outcome.success ? rollEnemyLoot(run.seed, run.stage, step.encounter) : [];
+          for (const item of loot) {
+            const existing = run.loot.find(entry => entry.itemId === item.itemId);
+            if (existing) existing.quantity += item.quantity; else run.loot.push(item);
+          }
+          run.events.push({ stage: run.stage, choice: outcome.choice, text: outcome.event, at: now, loot });
           run.stage++;
-          if (run.stage === definition.steps.length) run.status = 'ready';
+          if ('failed' in outcome && outcome.failed) {
+            run.status = 'failed'; run.active = false; character.activeAdventureId = null;
+            run.rewards = { wood: 0, herb: 0, experience: 0 }; run.loot.splice(0);
+          } else if (run.stage === definition.steps.length) run.status = 'ready';
           else run.dueAt = new Date(now.getTime() + definition.steps[run.stage]!.seconds * 1000);
           result = { decided: true, event: outcome.event };
         } else if (action === 'claim') {
@@ -78,15 +92,16 @@ export async function expeditionOperation(userId: string, action: string, input:
           if (!inventory) [inventory] = await AdventureInventory.create([{ userId }], { session });
           const stacks = new Map<string, number>(inventory!.stacks);
           for (const material of ['wood', 'herb'] as const) if (run.rewards![material]) changeStack(stacks, material, run.rewards![material]);
+          for (const item of run.loot) changeStack(stacks, item.itemId, item.quantity);
           inventory!.set('stacks', stacks); await inventory!.save({ session });
           const experience = character.experience + run.rewards!.experience;
           if (!Number.isSafeInteger(experience) || experience > 1000000000) throw workflowError(409, 'Se alcanzó el límite de experiencia.');
           character.experience = experience;
           character.level = Math.max(character.level, Math.min(100, 1 + Math.floor(experience / 100)));
           run.status = 'completed'; run.active = false; character.activeAdventureId = null;
-          result = { claimed: true, rewards: { wood: run.rewards!.wood, herb: run.rewards!.herb, experience: run.rewards!.experience } };
+          result = { claimed: true, loot: lootDto(run.loot), rewards: { wood: run.rewards!.wood, herb: run.rewards!.herb, experience: run.rewards!.experience } };
         } else if (action === 'abandon') {
-          run.status = 'abandoned'; run.active = false; character.activeAdventureId = null;
+          run.loot.splice(0); run.status = 'abandoned'; run.active = false; character.activeAdventureId = null;
           result = { abandoned: true };
         } else throw workflowError(400, 'Acción desconocida.');
         run.version++; character.version++;
@@ -105,13 +120,16 @@ export async function expeditionOperation(userId: string, action: string, input:
     throw error;
   } finally { await session.endSession(); }
 }
+export function lootDto(items: any[] = []) {
+  return items.map(item => { const spec = baseItems.find(entry => entry.id === item.itemId); return { itemId: item.itemId, quantity: item.quantity, name: spec?.name ?? 'Objeto', icon: spec?.icon ?? 'sparkles' }; });
+}
 export function runDto(run: any) {
   if (!run) return null;
   const definition = run.definition as ExpeditionDefinition;
   return { id: String(run._id), guildId: run.guildId, title: definition.title, status: run.status, stage: run.stage, totalStages: definition.steps.length,
-    step: definition.steps[run.stage] ? { title: definition.steps[run.stage]!.title, description: definition.steps[run.stage]!.description } : null,
+    step: definition.steps[run.stage] ? { title: definition.steps[run.stage]!.title, description: definition.steps[run.stage]!.description, encounter: definition.steps[run.stage]!.encounter ?? null } : null,
     dueAt: run.dueAt, version: run.version, rewards: { wood: run.rewards?.wood ?? 0, herb: run.rewards?.herb ?? 0, experience: run.rewards?.experience ?? 0 },
-    events: run.events.map((event: any) => ({ text: event.text, at: event.at })), createdAt: run.createdAt };
+    loot: lootDto(run.loot), events: run.events.map((event: any) => ({ text: event.text, at: event.at, loot: lootDto(event.loot) })), createdAt: run.createdAt };
 }
 export function expeditionRoutes(world?: WorldAccess) {
   const router = Router();

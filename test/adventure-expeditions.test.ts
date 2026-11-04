@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateExpeditions, expeditionCycle, resolveExpeditionStep, CYCLE_MS } from '../src/modules/adventure/expedition-rules.js';
+import { generateExpeditions, expeditionCycle, resolveExpeditionStep, prepareEncounters, resolveEnemyEncounter, rollEnemyLoot, CYCLE_MS } from '../src/modules/adventure/expedition-rules.js';
 import { runDto } from '../src/modules/adventure/expeditions.js';
 import { generateCountryExpeditions } from '../src/modules/adventure/expedition-generator.js';
 import { AdventureConfig } from '../src/database/models/Adventure.js';
@@ -41,4 +41,40 @@ test('generation recovers after a partial failure without duplicating offers', a
   await assert.rejects(generateCountryExpeditions(now), /interrupted/); assert.equal(offers.size, 3);
   await generateCountryExpeditions(now); await generateCountryExpeditions(now);
   assert.equal(offers.size, 3); assert.equal(lastCycle, cycle);
+});
+
+test('enemy encounters are stable snapshots, bounded by level, and reject exploration choices', () => {
+  const definition = generateExpeditions('country', 20)[0]!;
+  let encounters = 0, clear = 0;
+  for (let i = 0; i < 100; i++) {
+    const prepared = prepareEncounters(definition, `seed-${i}`, 1);
+    assert.deepEqual(prepared, prepareEncounters(definition, `seed-${i}`, 1));
+    for (const [stage, step] of prepared.steps.entries()) {
+      if (!step.encounter) { clear++; continue; }
+      encounters++;
+      assert.ok(step.encounter.fightChance >= 35 && step.encounter.fightChance <= 90);
+      assert.equal(step.encounter.avoidChance, 80);
+      assert.throws(() => resolveEnemyEncounter(`seed-${i}`, stage, 'careful', step.encounter!));
+      const outcome = resolveEnemyEncounter(`seed-${i}`, stage, 'fight', step.encounter);
+      assert.deepEqual(outcome, resolveEnemyEncounter(`seed-${i}`, stage, 'fight', step.encounter));
+      assert.equal(outcome.failed, false);
+      assert.equal(resolveEnemyEncounter('seed', stage, 'avoid', { ...step.encounter, avoidChance: 0 }).failed, true);
+      assert.equal(resolveEnemyEncounter('seed', stage, 'fight', { ...step.encounter, fightChance: 100 }).quantity, 3);
+    }
+  }
+  assert.ok(encounters > 0 && clear > 0);
+  assert.equal(definition.steps.some(step => step.encounter), false);
+});
+
+test('enemy loot is stable per stage and uses only supported, bounded items', () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    const enemy = { name: 'Bandido errante', level: 1, fightChance: 65, avoidChance: 80 };
+    const loot = rollEnemyLoot(`seed-${i}`, 0, enemy);
+    assert.deepEqual(loot, rollEnemyLoot(`seed-${i}`, 0, enemy));
+    assert.equal(loot.length, 1);
+    assert.ok(loot[0]!.quantity >= 1 && loot[0]!.quantity <= 2);
+    seen.add(loot[0]!.itemId);
+  }
+  assert.deepEqual([...seen].sort(), ['metal-scrap', 'recovered-shield', 'recovered-sword']);
 });

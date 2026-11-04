@@ -3,6 +3,11 @@ import { workflowError } from '../workflow/rules.js';
 export const ECONOMY = { maxStack: 1000000, maxSlots: 200, maxCoins: 1000000000, maxBatch: 100, maxUnitPrice: 1000000, gatherCooldown: 10 * 60 * 1000 };
 export interface ItemSpec { id: string; name: string; icon: string; category: string; sellPrice: number; ingredients?: Record<string, number> }
 export const baseItems: ItemSpec[] = [
+  { id: 'enemy-fang', name: 'Colmillo', icon: 'sword', category: 'Material', sellPrice: 3 },
+  { id: 'enemy-hide', name: 'Piel', icon: 'shield', category: 'Material', sellPrice: 3 },
+  { id: 'metal-scrap', name: 'Restos de metal', icon: 'gem', category: 'Material', sellPrice: 2 },
+  { id: 'recovered-sword', name: 'Espada recuperada', icon: 'sword', category: 'Equipo', sellPrice: 8 },
+  { id: 'recovered-shield', name: 'Escudo recuperado', icon: 'shield', category: 'Equipo', sellPrice: 8 },
   { id: 'wood', name: 'Madera', icon: 'leaf', category: 'Material', sellPrice: 2 },
   { id: 'herb', name: 'Hierba', icon: 'leaf', category: 'Material', sellPrice: 1 },
   { id: 'wooden-charm', name: 'Amuleto de madera', icon: 'sparkles', category: 'Cosmético', sellPrice: 5, ingredients: { wood: 2, herb: 2 } },
