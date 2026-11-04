@@ -16,6 +16,7 @@ function interaction(kind: string, fields: Record<string, unknown> = {}) {
 
 function handlersFor(calls: string[]): InteractionHandlers {
   return {
+    adventure: async () => { calls.push('adventure'); },
     workflow: async () => { calls.push('workflow'); },
     slash: async () => { calls.push('slash'); },
     interactive: async () => { calls.push('interactive'); },
@@ -38,14 +39,14 @@ test('every publishable definition routes exactly once to its registered handler
 test('component routes respect both interaction type and namespace; unknown commands stay untouched', async () => {
   const calls: string[] = [];
   const handlers = handlersFor(calls);
-  for (const [kind, customId] of [['modal', 'request:123'], ['select', 'mgl:123'], ['select', 'support:type'], ['button', 'game:123']]) {
+  for (const [kind, customId] of [['modal', 'request:123'], ['select', 'mgl:123'], ['select', 'support:type'], ['button', 'game:123'], ['button', 'adv:123:confirm'], ['select', 'adv:123:select']]) {
     assert.equal(await dispatchInteraction(interaction(kind!, { customId }), handlers), true);
   }
-  assert.deepEqual(calls, ['workflow', 'interactive', 'interactive', 'games']);
+  assert.deepEqual(calls, ['workflow', 'interactive', 'interactive', 'games', 'adventure', 'adventure']);
   for (const value of [interaction('button', { customId: 'mgl:123' }), interaction('select', { customId: 'other:123' }), interaction('command', { commandName: 'jugar', commandType: 3 })]) {
     assert.equal(await dispatchInteraction(value, handlers), false);
   }
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 6);
 });
 
 test('command identity includes its Discord type and rejects duplicate registrations', () => {

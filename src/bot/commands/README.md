@@ -23,3 +23,6 @@ La pantalla de control compara este registro con los comandos publicados en
 Discord. Discord publica cada comando raiz junto con sus subcomandos; separar
 los archivos no cambia esa unidad de publicacion. La publicacion sigue siendo
 manual.
+
+
+`adventure/` define los comandos personales del juego. `../adventure.ts` administra sus paneles privados y confirmaciones; `adventure/services.ts` usa los mismos servicios de personaje, inscripción, economía y expediciones que el dashboard. El registro central los dirige al manejador `adventure`. Los menús son temporales y están vinculados al usuario y servidor; las operaciones y recompensas se guardan en MongoDB con claves de idempotencia.

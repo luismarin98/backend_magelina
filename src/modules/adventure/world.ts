@@ -10,9 +10,9 @@ export interface WorldAccess {
   list: (userId: string, token: string) => Promise<{ id: string; name: string }[]>;
   verify: (userId: string, guildId: string) => Promise<string>;
 }
-export function createWorldAccess(bot: Client, access: ReturnType<typeof guildAuthorization>): WorldAccess {
+export function createWorldAccess(bot: Client, access?: ReturnType<typeof guildAuthorization>): WorldAccess {
   return {
-    list: async (userId, token) => (await access.listGuilds(token, userId)).filter(guild => guild.botInstalled).map(guild => ({ id: guild.id, name: guild.name })),
+    list: async (userId, token) => (access ? await access.listGuilds(token, userId) : []).filter(guild => guild.botInstalled).map(guild => ({ id: guild.id, name: guild.name })),
     verify: async (userId, guildId) => {
       await assertAvailable(guildId, undefined, false);
       const guild = await bot.guilds.fetch(guildId).catch((error: unknown) => {

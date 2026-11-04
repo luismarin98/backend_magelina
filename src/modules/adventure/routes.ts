@@ -14,6 +14,18 @@ export function characterAlias(value: unknown) {
   return alias;
 }
 
+export async function joinAdventureGuild(userId: string, guildId: string) {
+  if (!(await AdventureConfig.findOne({ guildId }).lean())?.enabled) throw workflowError(409, 'El juego est\u00e1 desactivado en este servidor.');
+  const character = await AdventureCharacter.findOne({ userId });
+  if (!character) throw workflowError(409, 'Inicia tu partida desde Mi aventura antes de unirte a un gremio.');
+  // No welcome currency or rewards: retries never reset or duplicate progress.
+  let membership;
+  try { membership = await AdventureMembership.findOneAndUpdate({ guildId, userId }, { $setOnInsert: { guildId, userId, ...joinAnnouncement(await AdventureConfig.findOne({ guildId }).lean(), character.alias) } }, { new: true, upsert: true, runValidators: true }); }
+  catch (error) { if (!hasCode(error, 11000)) throw error; membership = await AdventureMembership.findOne({ guildId, userId }); }
+  if (!membership) throw workflowError(503, 'No se pudo confirmar la inscripción. Reintenta para comprobar su estado.');
+  return { joined: true };
+}
+
 export function adventureRoutes(access: ReturnType<typeof guildAuthorization>) {
   const router = Router({ mergeParams: true });
   router.use(access.requireMember);
@@ -56,13 +68,7 @@ export function adventureRoutes(access: ReturnType<typeof guildAuthorization>) {
   router.post('/join', async (req, res) => {
     object(req.body, []);
     const guildId = req.managedGuild!.id, userId = req.session.user!.id;
-    const character = await AdventureCharacter.findOne({ userId });
-    if (!character) throw workflowError(409, 'Inicia tu partida desde Mi aventura antes de unirte a un gremio.');
-    // No welcome currency or rewards: retries never reset or duplicate progress.
-    let membership;
-    try { membership = await AdventureMembership.findOneAndUpdate({ guildId, userId }, { $setOnInsert: { guildId, userId, ...joinAnnouncement(await AdventureConfig.findOne({ guildId }).lean(), character.alias) } }, { new: true, upsert: true, runValidators: true }); }
-    catch (error) { if (!hasCode(error, 11000)) throw error; membership = await AdventureMembership.findOne({ guildId, userId }); }
-    if (!membership) throw workflowError(503, 'No se pudo confirmar la inscripción. Reintenta para comprobar su estado.');
+    await joinAdventureGuild(userId, guildId);
     res.json({ joined: true });
   });
   router.patch('/character', async (req, res) => {

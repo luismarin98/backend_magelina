@@ -146,3 +146,14 @@ Las espadas y escudos recuperados son comerciables; equiparlos y aplicar bonific
 El creador puede editar borradores, propuestas rechazadas y propuestas pendientes (estas vuelven a borrador y requieren nuevo envío). Los aprobados permiten crear un nuevo borrador de revisión desde el dashboard, conservando intacta la definición aprobada. Cada mutación valida autoría y versión.
 
 `DELETE /guilds/:guildId/adventure/items/:itemId`, con `{version}`, archiva el diseño y registra la acción en el historial. Desaparece de las listas y recetas; no admite edición, envío ni aprobación posterior. Los objetos aprobados ya fabricados mantienen su definición y pueden comerciarse, pero no fabricarse nuevamente. La interfaz solicita confirmación antes de retirarlo.
+
+
+### Comandos personales en Discord
+
+Nuevas definiciones: `/aventura iniciar|unirse|continuar|recoger|abandonar`, `/perfil [usuario]`, `/inventario`, `/aventuras`, `/viajar`, `/mercado`, `/fabricar [cantidad]`, `/vender [cantidad]` y `/ayuda juego`.
+
+- Sin roles de moderación; requieren pertenencia real al servidor donde se utilizan. Las respuestas son privadas. Perfil muestra datos públicos, sin saldo ni inventario ajeno.
+- El inicio es voluntario y conserva personajes existentes. La inscripción no viaja ni crea recompensas. Los viajes ofrecen gremios habilitados donde ya existe inscripción y el refugio neutral.
+- Inventario, recetas, mercados y destinos se paginan. Seleccionar un encargo, compra, venta, fabricación o viaje abre una confirmación personal. Las decisiones de etapa y el abandono también se confirman. Vender entrega objetos al mercado del sistema; publicar ofertas entre jugadores sigue disponible en el dashboard.
+- Los paneles se vinculan al usuario/servidor y vencen en cinco minutos o al reiniciar el proceso. El progreso permanece en MongoDB. Cada confirmación conserva su clave de idempotencia para reintentos; se vuelven a comprobar mantenimiento, pertenencia, ubicación, cantidades, versiones y estado en los servicios compartidos.
+- No se necesitan nuevos intents privilegiados ni permisos de moderación para el bot. Las definiciones se incluyen en el registro y catálogo; se publican manualmente desde Centro de control > Comandos del bot, o con el script de registro en el destino configurado.

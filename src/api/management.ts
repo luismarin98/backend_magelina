@@ -37,8 +37,9 @@ import { adminGuildRoutes } from './admin-guilds.js';
 
 export function managementRoutes({ bot, config }: ManagementDependencies) {
   const router = Router();
-  router.use(requireUser);
+  // Public definitions only; all server data and publication actions remain authenticated.
   router.get('/commands/catalog', (_req, res) => res.json(commandCatalog()));
+  router.use(requireUser);
 
   const access = guildAuthorization(bot, config);
   router.use('/adventure', globalAdventureRoutes(createWorldAccess(bot, access)));

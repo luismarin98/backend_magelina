@@ -142,6 +142,17 @@ export async function economyOperation(userId: string, action: string, input: Re
   } finally { await session.endSession(); }
 }
 
+export async function economyState(userId: string) {
+  const [bag, character] = await Promise.all([AdventureInventory.findOne({ userId }).lean(), AdventureCharacter.findOne({ userId }).lean()]);
+  const stacks = bag?.stacks instanceof Map ? [...bag.stacks] : Object.entries(bag?.stacks ?? {});
+  const designs = await AdventureItem.find({ _id: { $in: stacks.map(([itemId]) => itemId).filter(itemId => itemId.startsWith('design:')).map(itemId => itemId.slice(7)) } }).select('name icon').lean();
+  return { activeAdventureId: character!.activeAdventureId ?? null, currentGuildId: character!.currentGuildId ?? null, coins: character!.coins, nextGatherAt: bag?.gatheredAt ? new Date(bag.gatheredAt.getTime() + ECONOMY.gatherCooldown).toISOString() : null,
+    inventory: stacks.filter(([, quantity]) => quantity > 0).map(([itemId, quantity]) => {
+      const item = baseItems.find(item => item.id === itemId), design = designs.find(item => String(item._id) === itemId.slice(7));
+      return { itemId, quantity, name: item?.name ?? design?.name ?? 'Cosmético', icon: item?.icon ?? design?.icon ?? 'sparkles', sellPrice: item?.sellPrice ?? 5 };
+    }), recipes: baseItems.filter(item => item.ingredients), limits: ECONOMY };
+}
+
 export function economyRoutes(world?: WorldAccess) {
   const router = Router();
   router.use(async (req, _res, next) => {
@@ -150,15 +161,7 @@ export function economyRoutes(world?: WorldAccess) {
     next();
   });
   router.get('/', async (req, res) => {
-    const userId = req.session.user!.id;
-    const [bag, character] = await Promise.all([AdventureInventory.findOne({ userId }).lean(), AdventureCharacter.findOne({ userId }).lean()]);
-    const stacks = bag?.stacks instanceof Map ? [...bag.stacks] : Object.entries(bag?.stacks ?? {});
-    const designs = await AdventureItem.find({ _id: { $in: stacks.map(([itemId]) => itemId).filter(itemId => itemId.startsWith('design:')).map(itemId => itemId.slice(7)) } }).select('name icon').lean();
-    res.json({ activeAdventureId: character!.activeAdventureId ?? null, currentGuildId: character!.currentGuildId ?? null, coins: character!.coins, nextGatherAt: bag?.gatheredAt ? new Date(bag.gatheredAt.getTime() + ECONOMY.gatherCooldown).toISOString() : null,
-      inventory: stacks.filter(([, quantity]) => quantity > 0).map(([itemId, quantity]) => {
-        const item = baseItems.find(item => item.id === itemId), design = designs.find(item => String(item._id) === itemId.slice(7));
-        return { itemId, quantity, name: item?.name ?? design?.name ?? 'Cosmético', icon: item?.icon ?? design?.icon ?? 'sparkles', sellPrice: item?.sellPrice ?? 5 };
-      }), recipes: baseItems.filter(item => item.ingredients), limits: ECONOMY });
+    res.json(await economyState(req.session.user!.id));
   });
   router.get('/recipes', async (req, res) => {
     const result = page(await AdventureItem.find({ status: 'approved', archived: { $ne: true }, category: 'cosmetic', ...cursor(req.query.before) }).sort({ _id: -1 }).limit(11).lean(), 10);

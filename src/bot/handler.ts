@@ -1,3 +1,4 @@
+import { handleAdventure } from './adventure.js';
 import { withLanguage } from '../i18n/index.js';
 import type { Interaction } from 'discord.js';
 import type { Config } from '../config/env.js';
@@ -8,12 +9,13 @@ import { handleInteractive } from './interactive.js';
 import { handleGames } from './games.js';
 
 type Handler = (interaction: Interaction) => Promise<unknown>;
-export type InteractionHandlers = Record<'workflow' | 'slash' | 'interactive' | 'games', Handler>;
+export type InteractionHandlers = Record<'workflow' | 'slash' | 'interactive' | 'games' | 'adventure', Handler>;
 
 export function interactionRoute(interaction: Interaction): keyof InteractionHandlers | undefined {
   if (interaction.isCommand()) {
     return commandsByKey.get(commandKey(interaction.commandType, interaction.commandName))?.handler;
   }
+  if ((interaction.isButton() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('adv:')) return 'adventure';
   if (interaction.isModalSubmit() && interaction.customId.startsWith('request:')) return 'workflow';
   if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('support:')) return 'interactive';
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('mgl:')) return 'interactive';
@@ -30,6 +32,7 @@ export async function dispatchInteraction(interaction: Interaction, handlers: In
 
 export function createInteractionHandler(config: Pick<Config, 'ownerIds' | 'dashboardOrigin'>) {
   const handlers: InteractionHandlers = {
+    adventure: interaction => handleAdventure(interaction),
     workflow: handleWorkflow,
     slash: interaction => handleSlash(interaction, config),
     interactive: interaction => handleInteractive(interaction, config),

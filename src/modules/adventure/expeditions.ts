@@ -85,7 +85,7 @@ export async function expeditionOperation(userId: string, action: string, input:
             run.rewards = { wood: 0, herb: 0, experience: 0 }; run.loot.splice(0);
           } else if (run.stage === definition.steps.length) run.status = 'ready';
           else run.dueAt = new Date(now.getTime() + definition.steps[run.stage]!.seconds * 1000);
-          result = { decided: true, event: outcome.event };
+          result = { decided: true, event: outcome.event, loot: lootDto(loot), status: run.status };
         } else if (action === 'claim') {
           if (run.status !== 'ready') throw workflowError(409, 'Completa las etapas antes de recoger las recompensas.');
           let inventory = await AdventureInventory.findOne({ userId }).session(session);
@@ -131,27 +131,31 @@ export function runDto(run: any) {
     dueAt: run.dueAt, version: run.version, rewards: { wood: run.rewards?.wood ?? 0, herb: run.rewards?.herb ?? 0, experience: run.rewards?.experience ?? 0 },
     loot: lootDto(run.loot), events: run.events.map((event: any) => ({ text: event.text, at: event.at, loot: lootDto(event.loot) })), createdAt: run.createdAt };
 }
+export async function expeditionState(userId: string, world?: WorldAccess, requestedGuildId?: unknown) {
+  const character = await AdventureCharacter.findOne({ userId }).lean();
+  if (!character) throw workflowError(409, 'Primero inicia tu personaje.');
+  const guildId = requestedGuildId === undefined ? character.currentGuildId : id(requestedGuildId, true);
+  const active = await AdventureRun.findOne({ userId, active: true }).lean();
+  const history = await AdventureRun.find({ userId, active: false }).sort({ _id: -1 }).limit(5).lean();
+  let offers: any[] = [], boardMessage = '', joined = false;
+  if (guildId && world) {
+    try {
+      await world.verify(userId, guildId);
+      if (!(await AdventureConfig.findOne({ guildId }).lean())?.enabled) throw workflowError(409, 'El juego está desactivado en este país.');
+      joined = Boolean(await AdventureMembership.exists({ guildId, userId }));
+      offers = await AdventureOffer.find({ guildId, expiresAt: { $gt: new Date() } }).sort({ 'definition.minLevel': 1, _id: 1 }).limit(3).lean();
+      if (!offers.length) boardMessage = 'El tablón se está preparando. Las nuevas aventuras aparecerán automáticamente.';
+    } catch { boardMessage = 'No se pudo consultar el tablón de ese país. Puedes continuar o abandonar tu aventura actual.'; }
+  } else boardMessage = 'Viaja a un país con el juego habilitado para descubrir sus aventuras.';
+  return { serverTime: new Date(), guildId: guildId ?? null, characterLevel: character.level, nextAdventureAt: character.nextAdventureAt ?? null,
+    canStart: Boolean(guildId && joined && character.currentGuildId === guildId && !active), boardMessage, active: runDto(active), history: history.map(runDto),
+    offers: offers.map(offer => { const definition = offer.definition as ExpeditionDefinition; return { id: String(offer._id), title: definition.title, description: definition.description, minLevel: definition.minLevel, seconds: definition.steps.reduce((sum, step) => sum + step.seconds, 0), expiresAt: offer.expiresAt }; }) };
+}
+
 export function expeditionRoutes(world?: WorldAccess) {
   const router = Router();
   router.get('/', async (req, res) => {
-    const userId = req.session.user!.id, character = await AdventureCharacter.findOne({ userId }).lean();
-    if (!character) throw workflowError(409, 'Primero inicia tu personaje.');
-    const guildId = req.query.guildId === undefined ? character.currentGuildId : id(req.query.guildId, true);
-    const active = await AdventureRun.findOne({ userId, active: true }).lean();
-    const history = await AdventureRun.find({ userId, active: false }).sort({ _id: -1 }).limit(5).lean();
-    let offers: any[] = [], boardMessage = '', joined = false;
-    if (guildId && world) {
-      try {
-        await world.verify(userId, guildId);
-        if (!(await AdventureConfig.findOne({ guildId }).lean())?.enabled) throw workflowError(409, 'El juego está desactivado en este país.');
-        joined = Boolean(await AdventureMembership.exists({ guildId, userId }));
-        offers = await AdventureOffer.find({ guildId, expiresAt: { $gt: new Date() } }).sort({ 'definition.minLevel': 1, _id: 1 }).limit(3).lean();
-        if (!offers.length) boardMessage = 'El tablón se está preparando. Las nuevas aventuras aparecerán automáticamente.';
-      } catch { boardMessage = 'No se pudo consultar el tablón de ese país. Puedes continuar o abandonar tu aventura actual.'; }
-    } else boardMessage = 'Viaja a un país con el juego habilitado para descubrir sus aventuras.';
-    res.json({ serverTime: new Date(), guildId: guildId ?? null, characterLevel: character.level, nextAdventureAt: character.nextAdventureAt ?? null,
-      canStart: Boolean(guildId && joined && character.currentGuildId === guildId && !active), boardMessage, active: runDto(active), history: history.map(runDto),
-      offers: offers.map(offer => { const definition = offer.definition as ExpeditionDefinition; return { id: String(offer._id), title: definition.title, description: definition.description, minLevel: definition.minLevel, seconds: definition.steps.reduce((sum, step) => sum + step.seconds, 0), expiresAt: offer.expiresAt }; }) });
+    res.json(await expeditionState(req.session.user!.id, world, req.query.guildId));
   });
   for (const action of ['start', 'decide', 'claim', 'abandon']) router.post(`/${action}`, async (req, res) => {
     await assertAvailable('');

@@ -1,4 +1,4 @@
-import { commandDefinitions } from './commands/registry.js';
+import { commandDefinitions, commandRegistry } from './commands/registry.js';
 
 interface Option {
   type: number; name: string; description: string; required?: boolean;
@@ -7,6 +7,7 @@ interface Option {
 }
 const optionTypes: Record<number, string> = { 3: 'Texto', 4: 'Entero', 5: 'Sí / No', 6: 'Usuario', 7: 'Canal', 8: 'Rol', 9: 'Mención', 10: 'Número', 11: 'Archivo' };
 function requirements(name: string, subcommand: string): string[] {
+  if (commandRegistry.some(entry => entry.definition.name === name && entry.category === 'adventure')) return ['Comandos personales, sin rol de moderacion. Respuestas privadas.', 'Crear un personaje es voluntario. Viajar y comerciar requieren inscripcion y juego habilitado en el pais.', 'Una aventura activa por personaje. Confirmaciones personales validas cinco minutos; mantenimiento y recompensas compartidos con el dashboard.'];
   if (name === 'jugar') return ['Ser miembro del servidor y tener acceso al canal y permiso para usar comandos de aplicaciones.', 'Partida personal; botones válidos durante cinco minutos sin jugar. Diez segundos entre partidas nuevas.', 'Respeta el mantenimiento y los servidores suspendidos. Los resultados no se guardan.'];
   if (name === 'Crear solicitud') return ['Módulo Solicitudes habilitado.', 'Ver el canal y leer el historial del mensaje de origen.'];
   if (name === 'musica') return [
@@ -32,7 +33,7 @@ export function commandCatalog() {
         return;
       }
       const name = path.join(' '), kind = definition.type === 3 ? 'message' : 'slash';
-      entries.push({ id: `${definition.type}:${name}`, group: definition.name, name: kind === 'slash' ? `/${name}` : name,
+      entries.push({ id: `${definition.type}:${name}`, group: commandRegistry.some(entry => entry.definition.name === definition.name && entry.category === 'adventure') ? 'aventura' : definition.name, name: kind === 'slash' ? `/${name}` : name,
         description: description || 'Convierte un mensaje en una solicitud para tu comunidad.', kind,
         usage: kind === 'message' ? 'En un mensaje: clic derecho → Aplicaciones → Crear solicitud' : `/${name}${options.map(option => ` ${option.required ? `<${option.name}>` : `[${option.name}]`}`).join('')}`,
         requirements: requirements(definition.name, path.at(-1)!),

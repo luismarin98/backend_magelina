@@ -19,13 +19,14 @@ const categories = [
   { label: "Primeros pasos", value: 'start' },
   { label: "Comunidad y tareas", value: 'community' },
   { label: "M\u00fasica", value: 'music' },
+  { label: "Gremio de aventureros", value: 'adventure' },
   { label: "Entretenimiento", value: 'games' },
   { label: "Acciones de mensajes", value: 'messages' },
 ];
 const safe = (value: string, length = 100) => escapeMarkdown(value.replace(/[\r\n]/g, ' ').slice(0, length));
 
 function helpView(token: string, category = 'start') {
-  const commands = commandCatalog().commands.filter(command => category === 'music' ? command.group === 'musica' : category === 'games' ? command.group === 'jugar' : category === 'messages' ? command.kind === 'message' : category === 'community' ? command.group === 'magelina' : ['/magelina ayuda', '/magelina panel'].includes(command.name));
+  const commands = commandCatalog().commands.filter(command => category === 'adventure' ? command.group === 'aventura' : category === 'music' ? command.group === 'musica' : category === 'games' ? command.group === 'jugar' : category === 'messages' ? command.kind === 'message' : category === 'community' ? command.group === 'magelina' : ['/magelina ayuda', '/magelina panel'].includes(command.name));
   const embed = new EmbedBuilder().setColor(0xd94695).setTitle(`Magelina · ${t(categories.find(item => item.value === category)!.label)}`)
     .setDescription(commands.map(command => `**${command.name}**\n${t(command.description)}${command.kind === 'message' ? `\n${command.usage}` : ''}`).join('\n\n'))
     .setFooter({ text: t("Cada funci\u00f3n comprueba tus permisos y los m\u00f3dulos habilitados. Men\u00fa v\u00e1lido por 5 minutos.") });

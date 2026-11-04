@@ -15,6 +15,20 @@ function profession(value: unknown): 'hunter' | 'merchant' {
 }
 const dto = (character: any) => character ? ({ alias: character.alias, profession: character.profession ?? null, level: character.level, rank: character.rank, coins: character.coins, experience: character.experience, version: character.version, currentGuildId: character.currentGuildId ?? null, currentGuildName: character.currentGuildName ?? null }) : null;
 
+export async function startAdventureCharacter(userId: string, alias: unknown, chosenProfession: unknown) {
+  const fields = { alias: characterAlias(alias), profession: profession(chosenProfession) };
+  let character = await AdventureCharacter.findOne({ userId });
+  if (!character) {
+    try { character = await AdventureCharacter.create({ userId, ...fields }); }
+    catch (error) {
+      if (!hasCode(error, 11000)) throw error;
+      character = await AdventureCharacter.findOne({ userId });
+    }
+  }
+  if (!character) throw workflowError(503, 'No se pudo confirmar tu personaje. Inténtalo de nuevo.');
+  return character;
+}
+
 export function globalAdventureRoutes(world?: WorldAccess) {
   const router = Router();
   router.use(requireUser);
@@ -27,17 +41,7 @@ export function globalAdventureRoutes(world?: WorldAccess) {
   });
   router.post('/start', async (req, res) => {
     const input = object(req.body, ['alias', 'profession']);
-    const fields = { alias: characterAlias(input.alias), profession: profession(input.profession) };
-    const userId = req.session.user!.id;
-    let character = await AdventureCharacter.findOne({ userId });
-    if (!character) {
-      try { character = await AdventureCharacter.create({ userId, ...fields }); }
-      catch (error) {
-        if (!hasCode(error, 11000)) throw error;
-        character = await AdventureCharacter.findOne({ userId });
-      }
-    }
-    if (!character) throw workflowError(503, 'No se pudo confirmar tu personaje. Inténtalo de nuevo.');
+    const character = await startAdventureCharacter(req.session.user!.id, input.alias, input.profession);
     res.json({ character: dto(character) });
   });
   router.patch('/character', async (req, res) => {

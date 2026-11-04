@@ -1,3 +1,4 @@
+import { adventureCommands } from './adventure/index.js';
 import { managerCommand } from './community/index.js';
 import { musicCommand } from './music/index.js';
 import { gamesCommand } from './entertainment/index.js';
@@ -5,6 +6,7 @@ import { requestCommand } from './requests/index.js';
 
 // This manifest contains definitions only: publishing never loads runtime handlers.
 export const commandRegistry = [
+  ...adventureCommands.map(definition => ({ category: 'adventure', handler: 'adventure', definition: definition.toJSON() } as const)),
   { category: 'requests', handler: 'workflow', definition: requestCommand.toJSON() },
   { category: 'community', handler: 'slash', definition: managerCommand.toJSON() },
   { category: 'music', handler: 'slash', definition: musicCommand.toJSON() },
