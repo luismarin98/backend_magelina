@@ -54,13 +54,23 @@ async function check(requireTunnel = true) {
     throw new Error('El perfil de PC debe usar produccion, proxy, 127.0.0.1:3000 y las URLs de Vercel indicadas en HOSTING-PC.md.');
   }
   const extractor = resolve(root, env.YTDLP_PATH || '.tools/yt-dlp.exe');
-  if (env.YOUTUBE_EXPERIMENTAL === 'true') {
+  if (env.MUSIC_ENGINE === 'lavalink') {
+    const { lavalinkOptions } = await import('../dist/modules/music/lavalink.js');
+    const node = lavalinkOptions(env);
+    const response = await fetch(`http://${node.url}/v4/info`, { headers: { Authorization: node.auth }, signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error('Lavalink local no esta listo. Ejecuta npm run lavalink:start.');
+    const info = await response.json();
+    if (info.version.major < 4 || (info.version.major === 4 && info.version.minor < 2)) throw new Error('Lavalink requiere version 4.2 o superior para Discord/DAVE.');
+    console.log(`Lavalink ${info.version.semver}: listo en ${node.url}.`);
+  } else if (env.YOUTUBE_EXPERIMENTAL === 'true') {
     execFileSync(extractor, ['--version'], { cwd: root, windowsHide: true, stdio: 'ignore', timeout: 15000 });
   }
-  const { default: ffmpeg } = await import('ffmpeg-static');
-  if (!ffmpeg) throw new Error('FFmpeg no esta instalado. Ejecuta npm install.');
-  execFileSync(ffmpeg, ['-version'], { windowsHide: true, stdio: 'ignore', timeout: 15000 });
-  console.log('Configuracion, Node, FFmpeg y extractor: correctos. No se inicio sesion en Discord.');
+  if (env.MUSIC_ENGINE !== 'lavalink') {
+    const { default: ffmpeg } = await import('ffmpeg-static');
+    if (!ffmpeg) throw new Error('FFmpeg no esta instalado. Ejecuta npm install.');
+    execFileSync(ffmpeg, ['-version'], { windowsHide: true, stdio: 'ignore', timeout: 15000 });
+  }
+  console.log('Configuracion y motor de audio: correctos. No se inicio sesion en Discord.');
   console.log(`RAM libre ahora: ${(os.freemem() / 2 ** 30).toFixed(1)} GiB. Heap maximo al arrancar: 512 MiB (no limita el consumo total).`);
   if (requireTunnel) {
     if (!existsSync(tailscale)) throw new Error('Falta Tailscale. Instala la version oficial e inicia sesion; consulta HOSTING-PC.md.');

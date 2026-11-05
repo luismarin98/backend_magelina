@@ -17,7 +17,11 @@
     "start": "node --env-file-if-exists=.env dist/index.js",
     "register:commands": "tsx --env-file-if-exists=.env scripts/register-commands.ts",
     "probe:youtube": "tsx scripts/probe-youtube.ts",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "lavalink:prepare": "node scripts/lavalink-local.mjs prepare",
+    "lavalink:start": "node scripts/lavalink-local.mjs start",
+    "lavalink:check": "node scripts/lavalink-local.mjs check",
+    "probe:lavalink": "node scripts/lavalink-local.mjs probe"
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
@@ -30,7 +34,8 @@
     "i18next": "^26.5.11",
     "mongodb": "6.20.0",
     "mongoose": "^8.19.1",
-    "opusscript": "0.1.1"
+    "opusscript": "0.1.1",
+    "shoukaku": "4.3.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

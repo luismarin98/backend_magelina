@@ -21,7 +21,7 @@ export function createStreamingPlayer(noSubscriber = NoSubscriberBehavior.Pause)
 export interface MusicTransport {
   connect(guild: Guild, channelId: string): Promise<void>;
   play(track: MusicTrack, finished: (error?: string) => void): Promise<void>;
-  pause(): void; resume(): void; volume(value: number): void; stopTrack(): void; disconnect(): void;
+  pause(): void | Promise<void>; resume(): void | Promise<void>; volume(value: number): void | Promise<void>; stopTrack(): void | Promise<void>; disconnect(): void;
   position?(): number;
 }
 export class DiscordMusicTransport implements MusicTransport {
@@ -34,8 +34,14 @@ export class DiscordMusicTransport implements MusicTransport {
   private level = 0.3;
   private expectedDurationMs = 0;
   private recovering?: VoiceConnection;
+  private startupAt?: number;
   private source = 'audius';
   constructor(private readonly provider: MusicProvider, private readonly disconnected: () => void) {
+    this.player.on(AudioPlayerStatus.Playing, () => {
+      if (this.startupAt === undefined) return;
+      logRecord('music.audio.playing', { service: this.source, durationMs: Math.round(performance.now() - this.startupAt) });
+      this.startupAt = undefined;
+    });
     this.player.on(AudioPlayerStatus.Idle, () => {
       if (!this.finished) return;
       const early = (this.resource?.playbackDuration ?? 0) + 3000 < this.expectedDurationMs;
@@ -73,6 +79,7 @@ export class DiscordMusicTransport implements MusicTransport {
   }
   async play(track: MusicTrack, finished: (error?: string) => void) {
     this.stopTrack();
+    this.startupAt = performance.now();
     const controller = new AbortController(); this.controller = controller;
     this.expectedDurationMs = track.durationSeconds * 1000;
     this.source = track.id.startsWith('youtube:') ? 'youtube' : 'audius';
@@ -100,6 +107,7 @@ export class DiscordMusicTransport implements MusicTransport {
   position() { return this.resource?.playbackDuration ?? 0; }
   volume(value: number) { this.level = value / 100; this.resource?.volume?.setVolume(this.level); }
   stopTrack() {
+    this.startupAt = undefined;
     this.finished = undefined;
     this.controller?.abort(); this.controller = undefined;
     this.process?.kill(); this.process = undefined;

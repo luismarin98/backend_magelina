@@ -44,6 +44,42 @@ test('extractor failures sanitize stderr and malformed JSON', async () => {
   const malformed = fake(child => { child.stdout.end('invalid-json'); child.emit('close', 0); });
   await assert.rejects(malformed.extractor.track(video), /interpretar/);
 });
+
+test('fresh full metadata avoids duplicate extraction, is isolated and expires after 30 seconds', async t => {
+  let now = 1_000;
+  t.mock.method(Date, 'now', () => now);
+  const setup = fake(child => { child.stdout.end(JSON.stringify(metadata)); child.emit('close', 0); });
+  const first = await setup.extractor.track(video);
+  first.title = 'modified';
+  now += 29_999;
+  const second = await setup.extractor.track(`youtube:${video}`);
+  assert.equal(second.title, metadata.title);
+  assert.equal(setup.calls.length, 1);
+  now++;
+  await setup.extractor.track(video);
+  assert.equal(setup.calls.length, 2);
+});
+
+test('failed metadata is never cached and a subsequent attempt can recover', async () => {
+  let attempts = 0;
+  const setup = fake(child => {
+    if (++attempts === 1) { child.emit('close', 1); return; }
+    child.stdout.end(JSON.stringify(metadata)); child.emit('close', 0);
+  });
+  await assert.rejects(setup.extractor.track(video));
+  assert.equal((await setup.extractor.track(video)).title, metadata.title);
+  assert.equal(setup.calls.length, 2);
+});
+
+test('playlist previews do not replace full metadata validation', async () => {
+  const setup = fake((child, args) => {
+    child.stdout.end(JSON.stringify(args.includes('--flat-playlist') ? { entries: [metadata] } : { ...metadata, availability: 'private' }));
+    child.emit('close', 0);
+  });
+  assert.equal((await setup.extractor.playlist('youtube:playlist:PLabcdefghijk123', 1)).length, 1);
+  await assert.rejects(setup.extractor.track(video));
+  assert.equal(setup.calls.length, 2);
+});
 test('YouTube searches are bounded, normalized, cached and exclude invalid previews', async () => {
   const setup = fake(child => { child.stdout.end(JSON.stringify({ entries: [metadata, { ...metadata, id: 'abcdefghijk', duration: 1900 }, { ...metadata, id: 'invalid' }, metadata] })); child.emit('close', 0); });
   const tracks = await setup.extractor.search('Big Buck Bunny');

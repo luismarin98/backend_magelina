@@ -51,14 +51,16 @@ async function shutdown(exitCode = 0) {
       });
     }
     await stopWorker?.();
-    if (bot) getMusicService(bot).dispose();
+    if (bot) await getMusicService(bot).dispose();
     await bot?.destroy();
     await disconnectDatabase();
   } catch {
     console.error('No se pudo completar el cierre del backend.');
     process.exitCode = 1;
   } finally {
-    clearTimeout(deadline);
+    // Do not let a leaked socket or retry timer keep the stopped backend alive.
+    // This guard does not keep a clean process alive, but still bounds a stuck exit.
+    deadline.unref();
   }
 }
 

@@ -1,11 +1,14 @@
+import { getMusicService } from '../modules/music/service.js';
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 import { createInteractionHandler } from './handler.js';
 import type { Config } from '../config/env.js';
 import { logEvent } from '../modules/operations/service.js';
 import { logRecord, observeDiscordRest, traceOperation } from '../observability/logging.js';
 
-export function createBot(config: Pick<Config, 'ownerIds' | 'dashboardOrigin'>) {
+export function createBot(config: Pick<Config, 'ownerIds' | 'dashboardOrigin'> & Partial<Pick<Config, 'audiusApiKey'>>) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
+  // Lavalink must attach its gateway connector before Discord emits clientReady.
+  if (process.env.MUSIC_ENGINE === 'lavalink') getMusicService(client, config.audiusApiKey);
   observeDiscordRest(client.rest);
   const handleInteraction = createInteractionHandler(config);
 

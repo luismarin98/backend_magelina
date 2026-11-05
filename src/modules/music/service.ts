@@ -9,6 +9,8 @@ import { configuredYouTube } from './youtube.js';
 import { DiscordMusicTransport, type MusicTransport } from './transport.js';
 import { requireModule } from '../settings/service.js';
 import { workflowError } from '../workflow/rules.js';
+import { LavalinkRuntime, LavalinkYouTube, musicEngine } from './lavalink.js';
+import { LavalinkMusicTransport } from './lavalink-transport.js';
 import { createMusicNotifier, type MusicNotice, type MusicNotifier } from './notifications.js';
 
 interface Session { state: MusicState; transport: MusicTransport | null; idleSince: number; emptySince: number | null; maintenanceFailures?: number; watchdog?: ReturnType<typeof setTimeout> }
@@ -20,7 +22,7 @@ export class MusicService {
   private stopped = false;
   constructor(readonly provider: MusicProvider, private readonly transportFactory: (disconnected: () => void) => MusicTransport,
     private readonly enabled: (guildId: string) => Promise<unknown> = (guildId) => requireModule(guildId, 'music'),
-    private readonly notifier?: MusicNotifier) {}
+    private readonly notifier?: MusicNotifier, private readonly disposeEngine?: () => void | Promise<void>) {}
   private announce(guildId: string, session: Session, kind: MusicNotice['kind'], entries: MusicQueueEntry[]) {
     if (!this.notifier || !session.state.channelId || !entries.length || this.stopped) return;
     const notice: MusicNotice = structuredClone({ kind, guildId, channelId: session.state.channelId,
@@ -77,10 +79,9 @@ export class MusicService {
       if (session.transport) return;
       const transport = this.transportFactory(() => { void this.serial(guild.id, async () => { if (session.transport === transport) { logRecord('music.voice.lost', { guildId: guild.id, outcome: 'failed' }); this.close(session, 'Se perdio la conexion de voz. Reconecta para reiniciar la pista y continuar la cola.', true); } }); });
       session.transport = transport;
-      try { await transport.connect(guild, channelId); }
+      try { await transport.connect(guild, channelId); await transport.volume(session.state.volume); }
       catch (error) { this.close(session, 'No se pudo establecer la conexion de voz.', true); throw error; }
       if (this.stopped) { this.close(session); return; }
-      transport.volume(session.state.volume);
       session.state.channelId = channelId; session.state.status = 'idle'; session.state.error = null;
       session.idleSince = Date.now();
       if (session.state.queue.length) await this.next(guild.id, session);
@@ -104,7 +105,8 @@ export class MusicService {
   }
   private async next(guildId: string, session: Session) {
     clearTimeout(session.watchdog); session.watchdog = undefined;
-    session.transport?.stopTrack(); session.state.current = null;
+    try { await session.transport?.stopTrack(); } catch { this.close(session, 'No se pudo detener el reproductor. Reconecta para continuar.', true); return; }
+    session.state.current = null;
     if (session.transport && session.state.queue.length && !this.stopped) {
       try { await this.enabled(guildId); } catch { this.close(session, 'Musica pausada por configuracion o mantenimiento.'); return; }
       const entry = session.state.queue.shift()!;
@@ -130,7 +132,8 @@ export class MusicService {
         return;
       } catch {
         this.announce(guildId, session, 'failed', [entry]);
-        session.transport?.stopTrack(); session.state.error = 'Una pista no esta disponible y se retiro de la cola.'; session.state.current = null;
+        try { await session.transport?.stopTrack(); } catch { this.close(session, 'El motor de audio no responde. Reconecta para continuar.', true); return; }
+        session.state.error = 'Una pista no esta disponible y se retiro de la cola.'; session.state.current = null;
         if (session.transport && session.state.queue.length && !this.stopped) {
           session.state.status = 'buffering';
           session.watchdog = setTimeout(() => { void this.serial(guildId, async () => { await this.next(guildId, session); session.state.version++; }); }, 500);
@@ -146,11 +149,11 @@ export class MusicService {
       if (!session.transport) throw workflowError(409, 'El reproductor no esta conectado.');
       if (action === 'pause') {
         if (session.state.status !== 'playing') throw workflowError(409, 'No hay una cancion reproduciendose.');
-        session.transport.pause(); session.state.status = 'paused';
+        await session.transport.pause(); session.state.status = 'paused';
         clearTimeout(session.watchdog); session.watchdog = undefined;
       } else if (action === 'resume') {
         if (session.state.status !== 'paused') throw workflowError(409, 'El reproductor no esta pausado.');
-        session.transport.resume(); session.state.status = 'playing';
+        await session.transport.resume(); session.state.status = 'playing';
         session.watchdog = setTimeout(() => { void this.serial(guildId, async () => {
           if (session.state.current) this.announce(guildId, session, 'failed', [session.state.current]);
           await this.next(guildId, session); session.state.version++;
@@ -159,8 +162,8 @@ export class MusicService {
       } else if (action === 'skip') {
         if (session.state.current) this.announce(guildId, session, 'skipped', [session.state.current]);
         await this.next(guildId, session);
-      } else if (action === 'stop') { clearTimeout(session.watchdog); session.transport.stopTrack(); session.state.current = null; session.state.queue = []; session.state.status = 'idle'; session.idleSince = Date.now(); }
-      else if (action === 'volume') { session.state.volume = value as number; session.transport.volume(session.state.volume); }
+      } else if (action === 'stop') { clearTimeout(session.watchdog); await session.transport.stopTrack(); session.state.current = null; session.state.queue = []; session.state.status = 'idle'; session.idleSince = Date.now(); }
+      else if (action === 'volume') { await session.transport.volume(value as number); session.state.volume = value as number; }
       else if (action === 'remove') {
         if (!session.state.queue.some((entry) => entry.id === value)) throw workflowError(409, 'Esta pista ya no esta en la cola.');
         session.state.queue = session.state.queue.filter((entry) => entry.id !== value);
@@ -197,12 +200,24 @@ export class MusicService {
     }, 15_000);
     this.timer.unref();
   }
-  dispose() { this.stopped = true; clearInterval(this.timer); for (const session of this.sessions.values()) this.close(session); this.sessions.clear(); }
+  async dispose() { this.stopped = true; clearInterval(this.timer); for (const session of this.sessions.values()) this.close(session); this.sessions.clear(); await this.disposeEngine?.(); }
 }
 
 const services = new WeakMap<Client, MusicService>();
 export function getMusicService(bot: Client, apiKey?: string) {
   let service = services.get(bot);
-  if (!service) { const provider = new MusicSources(new AudiusProvider(apiKey), configuredYouTube()); service = new MusicService(provider, (disconnected) => new DiscordMusicTransport(provider, disconnected), undefined, createMusicNotifier(bot)); services.set(bot, service); }
+  if (!service) {
+    if (musicEngine() === 'lavalink') {
+      const runtime = new LavalinkRuntime(bot);
+      const youtube = new LavalinkYouTube(runtime);
+      const provider = new MusicSources(new AudiusProvider(apiKey), process.env.YOUTUBE_EXPERIMENTAL === 'true' ? youtube : null, () => youtube);
+      service = new MusicService(provider, disconnected => new LavalinkMusicTransport(runtime, youtube, provider, disconnected), undefined, createMusicNotifier(bot), () => runtime.dispose());
+    } else {
+      const provider = new MusicSources(new AudiusProvider(apiKey), configuredYouTube());
+      service = new MusicService(provider, disconnected => new DiscordMusicTransport(provider, disconnected), undefined, createMusicNotifier(bot));
+    }
+    logRecord('music.engine.selected', { service: musicEngine() });
+    services.set(bot, service);
+  }
   return service;
 }

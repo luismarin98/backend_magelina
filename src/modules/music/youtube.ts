@@ -67,6 +67,7 @@ function failureMessage(reason: string): string {
 }
 export class YouTubeExtractor {
   private active = 0;
+  private tracks = new Map<string, { at: number; track: MusicTrack }>();
   private searches = new Map<string, { at: number; tracks: MusicTrack[] }>();
   private diagnostics = new WeakMap<ChildProcessWithoutNullStreams, { tail: string }>();
   constructor(readonly executable: string, private readonly launch: ExtractorSpawner = (file, args) => spawn(file, args, { windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })) {}
@@ -112,7 +113,16 @@ export class YouTubeExtractor {
   }
   async track(value: string): Promise<MusicTrack> {
     const id = youtubeId(value);
-    return normalizeYouTube(await this.metadata(['--dump-single-json', '--skip-download', '--', `https://www.youtube.com/watch?v=${id}`], 'metadata'), id);
+    const cached = this.tracks.get(id);
+    if (cached && Date.now() - cached.at < 30_000) {
+      logRecord('youtube.metadata.cache', { service: 'yt-dlp', outcome: 'hit' });
+      return structuredClone(cached.track);
+    }
+    // Only validated full metadata is cached, never search or playlist previews or stream URLs.
+    const track = normalizeYouTube(await this.metadata(['--dump-single-json', '--skip-download', '--', `https://www.youtube.com/watch?v=${id}`], 'metadata'), id);
+    if (this.tracks.size >= 100) this.tracks.delete(this.tracks.keys().next().value!);
+    this.tracks.set(id, { at: Date.now(), track });
+    return structuredClone(track);
   }
   async playlist(value: string, limit: number): Promise<MusicTrack[]> {
     const request = youtubeRequestId(value);
@@ -153,6 +163,7 @@ export class YouTubeExtractor {
     return structuredClone(tracks);
   }
   async open(value: string, signal: AbortSignal): Promise<Readable> {
+    const startedAt = performance.now();
     if (signal.aborted) throw workflowError(409, 'La reproducción fue cancelada.');
     const id = youtubeId(value);
     const child = this.run(['--retries', '3', '--retry-sleep', 'http:1', '--http-chunk-size', '1M', '-f', 'bestaudio[protocol=https]/best[protocol=https]', '--match-filters', '!is_live & duration <= 1800 & age_limit < 18', '-o', '-', '--', `https://www.youtube.com/watch?v=${id}`]);
@@ -195,7 +206,7 @@ export class YouTubeExtractor {
     });
     // Keep a guard until the transport attaches pipeline error handling.
     stream.on('error', () => {});
-    logRecord('youtube.audio.ready', { service: 'yt-dlp' });
+    logRecord('youtube.audio.ready', { service: 'yt-dlp', durationMs: Math.round(performance.now() - startedAt) });
     return stream;
   }
 }

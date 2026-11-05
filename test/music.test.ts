@@ -280,3 +280,24 @@ test('failed tracks announce failure and notifier failures never stop playback',
   assert.equal(service.snapshot(guild.id).current?.track.id, 'second');
   assert.equal(service.snapshot(guild.id).status, 'playing');
 });
+
+test('failed asynchronous pause does not mark the player paused', async t => {
+  const { service, transports } = setup(t);
+  let state = await service.connect(guild, channelId, 0, authorize);
+  state = await service.enqueue(guild.id, 'first', 'actor', state.version, authorize);
+  t.mock.method(transports[0]!, 'pause', async () => { throw new Error('node unavailable'); });
+  await assert.rejects(service.control(guild.id, 'pause', state.version, authorize));
+  assert.equal(service.snapshot(guild.id).status, 'playing');
+  assert.equal(service.snapshot(guild.id).version, state.version);
+});
+
+test('failed asynchronous stop preserves current track and queue for reconnect', async t => {
+  const { service, transports } = setup(t);
+  let state = await service.connect(guild, channelId, 0, authorize);
+  state = await service.enqueue(guild.id, 'first', 'actor', state.version, authorize);
+  state = await service.enqueue(guild.id, 'second', 'actor', state.version, authorize);
+  t.mock.method(transports[0]!, 'stopTrack', async () => { throw new Error('node unavailable'); });
+  state = await service.control(guild.id, 'skip', state.version, authorize);
+  assert.equal(state.status, 'disconnected');
+  assert.deepEqual(state.queue.map(entry => entry.track.id), ['first', 'second']);
+});
