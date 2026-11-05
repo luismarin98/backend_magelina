@@ -33,6 +33,7 @@ export class DiscordMusicTransport implements MusicTransport {
   private finished?: (error?: string) => void;
   private level = 0.3;
   private expectedDurationMs = 0;
+  private recovering?: VoiceConnection;
   private source = 'audius';
   constructor(private readonly provider: MusicProvider, private readonly disconnected: () => void) {
     this.player.on(AudioPlayerStatus.Idle, () => {
@@ -52,15 +53,21 @@ export class DiscordMusicTransport implements MusicTransport {
   async connect(guild: Guild, channelId: string) {
     if (!ffmpegPath) throw workflowError(503, 'FFmpeg no esta disponible en este servidor.');
     this.connection = joinVoiceChannel({ guildId: guild.id, channelId, adapterCreator: guild.voiceAdapterCreator, selfDeaf: true });
-    const active = this.connection;
-    this.connection.on('error', () => { if (this.connection === active) this.disconnected(); });
-    this.connection.on(VoiceConnectionStatus.Disconnected, () => {
-      const connection = this.connection;
-      if (!connection) return;
+    const connection = this.connection;
+    const recover = () => {
+      if (this.connection !== connection || this.recovering === connection) return;
+      this.recovering = connection;
       void Promise.race([
-        entersState(connection, VoiceConnectionStatus.Signalling, 5_000), entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
-      ]).then(() => entersState(connection, VoiceConnectionStatus.Ready, 15_000)).catch(() => { if (this.connection === connection) this.disconnected(); });
-    });
+        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+        entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+        entersState(connection, VoiceConnectionStatus.Ready, 5_000),
+      ]).then(() => entersState(connection, VoiceConnectionStatus.Ready, 15_000)).catch(() => {
+        if (this.connection === connection) this.disconnected();
+      }).finally(() => { if (this.recovering === connection) this.recovering = undefined; });
+    };
+    connection.on('error', () => { logRecord('music.voice.error', { outcome: 'failed' }); recover(); });
+    connection.on('stateChange', (previous, next) => { logRecord('music.voice.state', { action: `${previous.status}:${next.status}` }); });
+    connection.on(VoiceConnectionStatus.Disconnected, recover);
     try { await entersState(this.connection, VoiceConnectionStatus.Ready, 20_000); this.connection.subscribe(this.player); }
     catch { this.disconnect(); throw workflowError(502, 'No se pudo conectar al canal de voz. Revisa permisos, DAVE y conectividad UDP.'); }
   }

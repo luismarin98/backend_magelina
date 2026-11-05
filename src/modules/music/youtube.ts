@@ -17,6 +17,22 @@ export function youtubeId(value: unknown): string {
   if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) throw workflowError(400, 'Selecciona un video individual de YouTube.');
   return id;
 }
+/** Canonical request IDs keep user URLs out of extractor arguments. */
+export function youtubeRequestId(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 300) throw workflowError(400, 'Introduce un enlace de YouTube valido.');
+  if (value.startsWith('youtube:playlist:')) {
+    const id = value.slice('youtube:playlist:'.length);
+    if (!/^[a-zA-Z0-9_-]{10,150}$/.test(id)) throw workflowError(400, 'Playlist de YouTube no valida.');
+    return `youtube:playlist:${id}`;
+  }
+  if (value.startsWith('https://')) {
+    let url: URL;
+    try { url = new URL(value); } catch { throw workflowError(400, 'Enlace de YouTube no valido.'); }
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || !['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(url.hostname)) throw workflowError(400, 'Enlace de YouTube no valido.');
+    if (url.searchParams.has('list')) return youtubeRequestId(`youtube:playlist:${url.searchParams.get('list')}`);
+  }
+  return `youtube:${youtubeId(value)}`;
+}
 export function normalizeYouTube(value: unknown, expectedId: string): MusicTrack {
   const item = value as Record<string, unknown> | null;
   if (!item || item.id !== expectedId || typeof item.title !== 'string' || !item.title.trim() || typeof item.duration !== 'number' || !Number.isFinite(item.duration) || item.duration < 1 || item.duration > 1800 || item.is_live === true || ['is_live', 'is_upcoming', 'post_live'].includes(String(item.live_status)) || !['public', 'unlisted'].includes(String(item.availability)) || (typeof item.age_limit === 'number' && item.age_limit >= 18) || item.has_drm === true) throw workflowError(400, 'Selecciona un video público disponible, sin restricciones de edad ni emisión en vivo, de hasta 30 minutos.');
@@ -97,6 +113,24 @@ export class YouTubeExtractor {
   async track(value: string): Promise<MusicTrack> {
     const id = youtubeId(value);
     return normalizeYouTube(await this.metadata(['--dump-single-json', '--skip-download', '--', `https://www.youtube.com/watch?v=${id}`], 'metadata'), id);
+  }
+  async playlist(value: string, limit: number): Promise<MusicTrack[]> {
+    const request = youtubeRequestId(value);
+    if (!request.startsWith('youtube:playlist:')) throw workflowError(400, 'Introduce una playlist de YouTube.');
+    const id = request.slice('youtube:playlist:'.length);
+    const result = await this.metadata(['--yes-playlist', '--flat-playlist', '--playlist-end', '100', '--dump-single-json', '--skip-download', '--', `https://www.youtube.com/playlist?list=${id}`], 'playlist');
+    if (!result || typeof result !== 'object' || !('entries' in result) || !Array.isArray(result.entries)) throw workflowError(502, 'YouTube devolvio una playlist no valida.');
+    const tracks: MusicTrack[] = [];
+    for (const entry of result.entries.slice(0, 100)) {
+      if (tracks.length >= Math.min(25, Math.max(0, limit))) break;
+      try {
+        if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(entry.id)) continue;
+        const track = normalizeYouTube({ ...entry, availability: entry.availability ?? 'public' }, entry.id);
+        if (!tracks.some(existing => existing.id === track.id)) tracks.push(track);
+      } catch { /* Unavailable and invalid previews are excluded; playback revalidates full metadata. */ }
+    }
+    if (!tracks.length) throw workflowError(400, 'La playlist no contiene canciones disponibles de hasta 30 minutos.');
+    return tracks;
   }
   async search(query: string): Promise<MusicTrack[]> {
     const term = query.trim();

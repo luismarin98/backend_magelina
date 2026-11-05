@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { YouTubeExtractor, normalizeYouTube, youtubeId, youtubeFailure, type ExtractorSpawner } from '../src/modules/music/youtube.js';
+import { YouTubeExtractor, normalizeYouTube, youtubeId, youtubeRequestId, youtubeFailure, type ExtractorSpawner } from '../src/modules/music/youtube.js';
 import { MusicSources, musicTrackId } from '../src/modules/music/sources.js';
 const video = 'YE7VzlLtp-4';
 const metadata = { id: video, title: 'Big Buck Bunny', channel: 'Blender', duration: 596, availability: 'public', age_limit: 0, is_live: false };
@@ -131,4 +131,23 @@ test('mixed sources keep Audius IDs isolated and disabled YouTube cannot be requ
   assert.equal((await sources.track('abc12')).id, 'abc12');
   assert.throws(() => sources.track(`youtube:${video}`), /no está habilitada/);
   assert.throws(() => sources.streamUrl(`youtube:${video}`), /extractor/);
+});
+
+
+test('playlist requests canonicalize list links and reject untrusted URLs and IDs', () => {
+  const id = 'PLabcdefghijk123';
+  for (const link of [`https://www.youtube.com/playlist?list=${id}`, `https://youtu.be/${video}?list=${id}`, `https://www.youtube.com/watch?v=${video}&list=${id}`]) assert.equal(youtubeRequestId(link), `youtube:playlist:${id}`);
+  for (const link of ['https://youtube.com.evil/playlist?list=PLabcdefghijk123', 'https://user:pass@youtube.com/playlist?list=PLabcdefghijk123', 'youtube:playlist:--exec=x', 'https://www.youtube.com/playlist?list=']) assert.throws(() => youtubeRequestId(link));
+});
+
+test('playlist extraction is bounded and keeps ordered valid unique previews', async () => {
+  const { extractor, calls } = fake(child => {
+    child.stdout.end(JSON.stringify({ entries: [metadata, { ...metadata, id: 'abcdefghijk', duration: 1801 }, metadata, { ...metadata, id: '12345678901' }] }));
+    child.emit('close', 0);
+  });
+  const tracks = await extractor.playlist('youtube:playlist:PLabcdefghijk123', 2);
+  assert.deepEqual(tracks.map(track => track.id), [`youtube:${video}`, 'youtube:12345678901']);
+  assert.ok(calls[0]!.includes('--yes-playlist'));
+  assert.equal(calls[0]![calls[0]!.indexOf('--playlist-end') + 1], '100');
+  assert.equal(calls[0]!.at(-1), 'https://www.youtube.com/playlist?list=PLabcdefghijk123');
 });

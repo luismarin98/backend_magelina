@@ -23,6 +23,7 @@ export function normalizeTrack(value: unknown): MusicTrack | null {
   return { id: value.id, title: value.title.trim().slice(0, 200), artist: typeof value.user.name === 'string' ? value.user.name.slice(0, 120) : 'Artista de Audius', durationSeconds: Math.floor(value.duration), permalink: permalink.href, artworkUrl };
 }
 export interface MusicProvider {
+  playlist?(id: string, limit: number): Promise<MusicTrack[]>;
   openStream?(id: string, signal: AbortSignal): Promise<import('node:stream').Readable>;
   search(query: string, source?: 'audius' | 'youtube'): Promise<MusicTrack[]>;
   track(id: string): Promise<MusicTrack>;

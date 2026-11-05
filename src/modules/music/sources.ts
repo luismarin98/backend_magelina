@@ -1,12 +1,12 @@
 import type { MusicProvider } from './audius.js';
 import { trackId } from './audius.js';
 import type { YouTubeExtractor } from './youtube.js';
-import { youtubeId, configuredYouTube } from './youtube.js';
+import { youtubeRequestId, configuredYouTube } from './youtube.js';
 import { openAudio } from './network.js';
 import { workflowError } from '../workflow/rules.js';
 
 export function musicTrackId(value: unknown): string {
-  if (typeof value === 'string' && value.startsWith('youtube:')) return `youtube:${youtubeId(value)}`;
+  if (typeof value === 'string' && (value.startsWith('youtube:') || value.startsWith('https://'))) return youtubeRequestId(value);
   return trackId(value);
 }
 export class MusicSources implements MusicProvider {
@@ -18,6 +18,10 @@ export class MusicSources implements MusicProvider {
     if (source === 'audius') return this.audius.search(query);
     if (!this.youtube) throw workflowError(503, 'La fuente experimental de YouTube no está habilitada.');
     return this.youtube.search(query);
+  }
+  playlist(id: string, limit: number) {
+    if (!this.youtube) throw workflowError(503, 'La fuente experimental de YouTube no esta habilitada.');
+    return this.youtube.playlist(id, limit);
   }
   track(id: string) {
     if (!id.startsWith('youtube:')) return this.audius.track(id);

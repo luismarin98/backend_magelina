@@ -183,3 +183,19 @@ Reinicia el backend para cargar cambios de configuracion y codigo.
 ### Permisos de invitacion calculados
 
 `src/discord/invitation.ts` declara los requisitos por funcion y reutiliza las opciones de permisos de las plantillas de roles. `/api/bot` publica el enlace OAuth2, la mascara decimal y el recuento de permisos unicos. La dashboard usa ese enlace para todas las invitaciones, incluido el servidor preseleccionado. No se solicita Administrator. Al incorporar funciones que requieran permisos nuevos debe actualizarse el catalogo; el calculo de la mascara es automatico. Este enlace no modifica por si solo permisos de instalaciones existentes ni supera las restricciones de canales o jerarquia de roles.
+
+
+## Avisos de musica en Discord
+
+El reproductor publica en el chat del canal de voz activo al agregar canciones,
+al iniciar o terminar una pista, y al saltarla o detectar un fallo. Muestra quien
+la solicito, las canciones pendientes y cual sigue. Las playlists generan un unico
+resumen de incorporacion, seguido de los avisos de reproduccion de cada pista.
+Funciona tanto para comandos como para solicitudes del dashboard.
+
+Magelina necesita Ver canal, Enviar mensajes e Insertar enlaces en ese canal,
+ademas de los permisos de voz. No se envian pings a los solicitantes. Si faltan
+permisos o Discord rechaza el mensaje, se registra `music.notice.failed` y la
+musica continua. Los envios mantienen su orden por servidor y el limite de 50
+avisos pendientes evita acumular mensajes indefinidamente durante una falla.
+Los avisos se descartan si el bot ya salio del canal; no se redirigen a otro chat.
