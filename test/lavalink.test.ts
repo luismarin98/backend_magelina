@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { Client, Guild } from 'discord.js';
 import { LoadType, type LavalinkResponse, type PlayOptions, type Track, type Node as LavalinkNode } from 'shoukaku';
-import { LavalinkYouTube, lavalinkYouTubeTrack, lavalinkOptions, musicEngine, LavalinkRuntime } from '../src/modules/music/lavalink.js';
+import { LavalinkYouTube, lavalinkYouTubeTrack, lavalinkOptions, musicEngine, LavalinkRuntime, lavalinkFailure } from '../src/modules/music/lavalink.js';
 import { LavalinkMusicTransport } from '../src/modules/music/lavalink-transport.js';
 
 const video = 'oOi3oJmfz4o';
@@ -59,9 +59,12 @@ class FakePlayer extends EventEmitter {
   controls: unknown[] = [];
   async playTrack(options: PlayOptions) {
     this.options = options;
-    if (this.autoStart) queueMicrotask(() => this.emit('start', this.event()));
+    if (this.autoStart) queueMicrotask(() => {
+      this.emit('start', this.event());
+      this.emit('update', { state: { connected: true, position: 20 } });
+    });
   }
-  event(reason = 'finished') { return { reason, track: { ...raw, userData: this.options?.track?.userData } }; }
+  event(reason = 'finished') { return { reason, exception: { message: 'Audio unavailable', cause: 'unknown' }, track: { ...raw, userData: this.options?.track?.userData } }; }
   async stopTrack() { this.controls.push('stop'); }
   async setPaused(value: boolean) { this.controls.push(['paused', value]); }
   async setGlobalVolume(value: number) { this.controls.push(['volume', value]); }
@@ -84,7 +87,7 @@ function setup() {
 const guild = { id: '100000000000000001', shardId: 0 } as Guild;
 const channelId = '100000000000000002';
 
-test('Lavalink transport waits for the actual start event and applies asynchronous controls', async t => {
+test('Lavalink transport requires connected playback progress before announcing playback', async t => {
   const { transport, player, counts } = setup();
   t.after(() => transport.disconnect());
   await transport.connect(guild, channelId);
@@ -94,6 +97,11 @@ test('Lavalink transport waits for the actual start event and applies asynchrono
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.equal(started, false);
   player.emit('start', player.event());
+  player.emit('update', { state: { connected: true, position: 0 } });
+  player.emit('update', { state: { connected: false, position: 20 } });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(started, false);
+  player.emit('update', { state: { connected: true, position: 20 } });
   await playing;
   assert.equal(started, true);
   await transport.pause(); await transport.resume(); await transport.volume(45);
@@ -125,7 +133,7 @@ test('startup failures reject playback and track errors invoke completion only o
   await transport.connect(guild, channelId);
   player.autoStart = false;
   const startup = transport.play(lavalinkYouTubeTrack(raw), () => {});
-  const rejected = assert.rejects(startup, /error al obtener/);
+  const rejected = assert.rejects(startup, /audio reproducible/);
   await new Promise<void>(resolve => setImmediate(resolve));
   player.emit('exception', player.event());
   await rejected;
@@ -136,6 +144,31 @@ test('startup failures reject playback and track errors invoke completion only o
   player.emit('stuck', event); player.emit('end', { ...event, reason: 'loadFailed' });
   assert.equal(errors.length, 1);
   assert.match(errors[0]!, /dejo de entregar/);
+});
+
+test('source failures are classified without exposing upstream URLs or credentials', () => {
+  for (const [message, reason] of [
+    ['Sign in to confirm you are not a bot', 'source-auth-required'],
+    ['HTTP 403 https://private.example/?token=secret', 'source-forbidden'],
+    ['HTTP 429', 'source-rate-limited'], ['AllClientsFailedException', 'source-clients-failed'],
+    ['No supported audio formats', 'source-format-unavailable'], ['timed out', 'source-timeout'],
+    ['unknown https://private.example/?token=secret', 'source-error'],
+  ]) assert.equal(lavalinkFailure(message!), reason);
+});
+
+test('start followed by extraction failure never announces playback or advances the queue', async t => {
+  const { transport, player } = setup();
+  t.after(() => transport.disconnect());
+  await transport.connect(guild, channelId);
+  player.autoStart = false;
+  let completed = 0;
+  const playing = transport.play(lavalinkYouTubeTrack(raw), () => { completed++; });
+  const rejected = assert.rejects(playing, /fuente rechazo/);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  player.emit('start', player.event());
+  player.emit('exception', { ...player.event(), exception: { message: 'Sign in', cause: 'HTTP 403' } });
+  await rejected;
+  assert.equal(completed, 0);
 });
 
 test('disconnect releases the voice connection and removes node listeners', async () => {

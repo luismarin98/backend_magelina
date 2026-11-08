@@ -13,6 +13,17 @@ export function musicEngine(env: NodeJS.ProcessEnv = process.env): 'direct' | 'l
   if (engine !== 'direct' && engine !== 'lavalink') throw new Error('MUSIC_ENGINE debe ser direct o lavalink.');
   return engine;
 }
+
+/** Only fixed categories leave the node; raw plugin errors can contain signed URLs. */
+export function lavalinkFailure(detail: string): string {
+  if (/requires? login|sign.?in|confirm.*not a bot|LOGIN_REQUIRED/i.test(detail)) return 'source-auth-required';
+  if (/\b429\b|rate.?limit/i.test(detail)) return 'source-rate-limited';
+  if (/\b403\b|forbidden/i.test(detail)) return 'source-forbidden';
+  if (/AllClientsFailed|all clients failed/i.test(detail)) return 'source-clients-failed';
+  if (/no supported audio|no formats|format.*unavailable/i.test(detail)) return 'source-format-unavailable';
+  if (/timeout|timed out/i.test(detail)) return 'source-timeout';
+  return 'source-error';
+}
 export function lavalinkOptions(env: NodeJS.ProcessEnv = process.env) {
   let url: URL;
   try { url = new URL(env.LAVALINK_URL ?? 'http://127.0.0.1:2333'); }

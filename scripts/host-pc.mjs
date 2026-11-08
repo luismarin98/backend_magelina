@@ -86,17 +86,23 @@ async function check(requireTunnel = true) {
 
 async function start() {
   if (!process.argv.includes('--render-stopped')) throw new Error('Primero suspende el servicio de Render. Luego ejecuta npm run host:pc -- -RenderStopped.');
-  const env = await check();
+  const selected = parseEnv(await readFile(envPath, 'utf8'));
   await mkdir(dirname(lock), { recursive: true });
   await clearStaleLock();
   try { await writeFile(lock, String(process.pid), { flag: 'wx' }); }
   catch (error) { if (error.code !== 'EEXIST') throw error; throw new Error('El host sigue en ejecucion. Ejecuta npm run host:stop y espera a que confirme el cierre.'); }
   let child;
+  let audio;
   let stopTimer;
   // Windows entrega Ctrl+C tambien al hijo que hereda esta consola.
   const interrupt = () => { if (process.platform !== 'win32' && child?.exitCode === null) child.kill('SIGINT'); };
   const terminate = () => { if (child?.exitCode === null) child.kill('SIGTERM'); };
   try {
+    if (selected.MUSIC_ENGINE === 'lavalink') {
+      const { startLocalLavalink } = await import('./lavalink-stack.mjs');
+      audio = await startLocalLavalink();
+    }
+    const env = await check();
     await unlink(stopFile).catch(() => {});
     await new Promise((accept, reject) => {
       const probe = createServer();
@@ -114,6 +120,7 @@ async function start() {
     process.once('SIGINT', interrupt); process.once('SIGTERM', terminate);
     process.exitCode = await new Promise((accept, reject) => { child.once('error', reject); child.once('exit', code => accept(code ?? 1)); });
   } finally {
+    await audio?.close();
     clearInterval(stopTimer);
     process.off('SIGINT', interrupt); process.off('SIGTERM', terminate);
     await unlink(lock).catch(() => {});

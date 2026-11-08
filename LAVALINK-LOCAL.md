@@ -1,70 +1,43 @@
-# Prueba local de Lavalink
+# Lavalink local
 
-Magelina conserva comandos, permisos, cola, playlists, dashboard y avisos. El motor
-`lavalink` sustituye la extraccion y el envio de audio, incluidos los de YouTube;
-no utiliza yt-dlp ni `@discordjs/voice` para esas conexiones. `direct` conserva el
-motor anterior. Solo se admite un nodo local en `127.0.0.1` en esta integracion.
+Magelina conserva comandos, permisos, cola, playlists, dashboard y avisos. Con
+`MUSIC_ENGINE=lavalink`, Lavalink extrae y envia audio a Discord, incluido YouTube;
+no utiliza yt-dlp ni `@discordjs/voice` para esas conexiones. Todo sigue en la PC.
 
-## Preparar e iniciar el nodo
+## Preparacion
 
 ```powershell
 npm install
-npm run lavalink:prepare
-npm run lavalink:start
+npm run lavalink:prepare:youtube
+npm run build
 ```
 
-El instalador para Windows x64 descarga Lavalink 4.2.2, youtube-plugin 1.18.2 y
-Java 21 portable de sus fuentes oficiales y comprueba SHA-256. Los guarda en
-`.tools/lavalink/`; no cambia Java ni PATH del sistema. La clave aleatoria queda
-en `.env.lavalink`, excluido de Git, y la configuracion del nodo tambien queda
-dentro de `.tools/`. Escucha en `127.0.0.1:2333`, sin exponerlo por Funnel. El heap
-de Java tiene un maximo de 512 MiB; el consumo total del proceso puede ser mayor.
+Se instalan dentro de `.tools/lavalink/`, sin modificar Java ni PATH del sistema:
 
-Con el nodo iniciado, desde otra terminal:
+- Lavalink 4.2.2 y Java 21 portable, con SHA-256 oficial.
+- youtube-plugin SABR `02f536d9ac05b4bb0f91dedc19f964f30fc18559`, con SHA-256
+  oficial, mas una compilacion local del PR abierto #229, revision
+  `1ddb648257d5b547aa1e2dfb8104edf6cb1089be`, para tokens PO por video.
+- yt-cipher con Deno portable y yt-dlp/ejs fijado a una revision.
+- webpo-generator `682ac9fbfb64948a8b518551011138486c560207`, con `npm ci`.
+- Compilador Eclipse ECJ 3.40.0, verificado con el SHA-1 publicado en Maven Central.
 
-```powershell
-npm run lavalink:check
-npm run probe:lavalink -- oOi3oJmfz4o
-node scripts/lavalink-local.mjs probe-audio oOi3oJmfz4o 180
-```
+El plugin con tokens PO **es experimental y no es una version estable publicada**.
+`build-youtube-po.mjs` compila el codigo del PR contra las dependencias del nodo y
+actualiza sus clases en el JAR SABR. No modifica ese codigo fuente.
+`lavalink:prepare` vuelve a aplicar la compilacion si el generador ya esta preparado.
+Ejecutar las preparaciones con el host detenido: reemplazan el JAR del plugin.
 
-La primera prueba consulta el estado; la segunda solo carga metadatos. La tercera
-decodifica audio en tiempo real sin conectarse a Discord ni guardar la cancion.
-Cargar metadatos correctamente no demuestra que YouTube entregue el audio.
+Las claves aleatorias permanecen en `.env.lavalink`, excluido de Git. No copiarlas
+a `.env` ni `.env.pc`. Los servicios escuchan solo en 127.0.0.1: Lavalink en 2333,
+firmas en 8001 y tokens PO en 8002. No usan cookies, cuentas personales ni servicios
+publicos de firmas o tokens. El servicio PO resuelve retos de YouTube localmente;
+yt-cipher usa dos workers y PO uno. El heap Java tiene un maximo de 512 MiB;
+el consumo total del conjunto es mayor y se realiza en esta PC.
 
-Tambien se puede comprobar el flujo del reproductor sin conectar a Discord:
+## Arranque y cierre
 
-```powershell
-node scripts/lavalink-local.mjs probe-player oOi3oJmfz4o
-```
-
-Esta comprobacion crea un reproductor temporal en el nodo y observa sus eventos
-durante 20 segundos. No envia sonido a ningun canal. Un evento de inicio sin
-excepciones no demuestra reproduccion audible ni continuidad de la cancion
-completa. El endpoint `/youtube/stream` de la prueba de decodificacion y el flujo
-del reproductor pueden dar resultados diferentes; confirmar en un canal real.
-
-## Componente opcional de firmas de YouTube
-
-Si el plugin no logra abrir el audio, el proyecto youtube-source recomienda
-yt-cipher. Este componente adicional descarga Deno portable y codigo oficial de
-`kikkia/yt-cipher` y `yt-dlp/ejs`, y ejecuta un servicio con permisos de red y
-archivos. Solo debe prepararse si se ha decidido utilizarlo:
-
-```powershell
-node scripts/lavalink-local.mjs prepare-cipher
-node scripts/lavalink-local.mjs start-cipher
-```
-
-El servicio escucha en `127.0.0.1:8001`, usa su propia clave local y dos workers.
-Mantenerlo iniciado y reiniciar Lavalink para que lea la configuracion generada.
-No se usa un servidor publico de firmas, OAuth ni cookies de cuentas personales.
-Su cache y su archivo de dependencias quedan dentro de `.tools/lavalink/`.
-
-## Activar Magelina despues de verificar el audio
-
-En el perfil usado para arrancar el bot (`.env.pc` para el host local, o `.env`
-para desarrollo):
+En `.env.pc` (perfil del host):
 
 ```dotenv
 MUSIC_ENGINE=lavalink
@@ -72,32 +45,55 @@ LAVALINK_URL=http://127.0.0.1:2333
 YOUTUBE_EXPERIMENTAL=true
 ```
 
-No copiar la clave a otros archivos: el backend lee `.env.lavalink` si no hay
-`LAVALINK_PASSWORD` explicitamente configurada. Arrancar desde la raiz del backend.
-
-Detener la instancia anterior antes de iniciar otra. Un reinicio del backend
-descarta su cola en memoria. Con Lavalink y, si se utiliza, yt-cipher iniciados:
-
 ```powershell
-npm run build
-npm run host:check
 npm run host:pc -- -RenderStopped
+npm run host:stop
 ```
 
-Se conecta al mismo bot de Discord; no se debe iniciar una segunda instancia.
-La integracion espera el evento de inicio de Lavalink antes de marcar la pista
-como reproduciendose. Los controles asincronos se aplican antes de actualizar
-el estado y los eventos de pistas anteriores no avanzan otra vez la cola.
+El lanzador inicia primero firmas, tokens y Lavalink; espera su disponibilidad y
+despues inicia el mismo bot. Guarda registros en `.cache/lavalink-*.log`.
+Al cerrar, libera los reproductores y termina los auxiliares que inicio. Si ya
+estaban iniciados en otras terminales, los reutiliza y no los detiene.
+No arrancar dos instancias del bot. Un reinicio descarta la cola en memoria.
 
-Para volver al motor anterior, usar `MUSIC_ENGINE=direct` y reiniciar el backend.
-Detener los procesos auxiliares con Ctrl+C en sus terminales.
+Para uso manual o desarrollo, abrir los auxiliares en terminales separadas:
 
-`npm run host:stop` detiene el backend y su conexion con Lavalink; no detiene
-los servicios Java y yt-cipher. El cierre del backend espera la liberacion de
-los reproductores y desactiva la reconexion del cliente. Un limite de 10 segundos
-impide que conexiones residuales mantengan vivo un backend que ya se esta cerrando.
+```powershell
+node scripts/lavalink-local.mjs start-cipher
+node scripts/lavalink-local.mjs start-pot
+npm run lavalink:start
+```
+
+En ese caso se cierran con Ctrl+C en cada terminal. `.env` sigue siendo el perfil
+de desarrollo; `.env.pc` es independiente. Para volver al motor anterior, poner
+`MUSIC_ENGINE=direct` en el perfil utilizado y reiniciar.
+
+## Verificacion
+
+```powershell
+npm run lavalink:check
+npm run probe:lavalink -- oOi3oJmfz4o
+node scripts/lavalink-local.mjs probe-frames oOi3oJmfz4o 225
+```
+
+La primera consulta el nodo; la segunda solo carga metadatos. `probe-frames` consume
+audio mediante Lavaplayer y el mismo plugin, sin conectarse a Discord ni guardar
+la cancion. Cuenta tramas de 20 ms; limita el objetivo a un segundo antes de la
+duracion indicada. Decodifica tan rapido como llegan los datos, no en tiempo real.
+Devuelve tiempo al primer audio y milisegundos decodificados, sin URLs ni tokens.
+
+El 7 de noviembre de 2026 se verificaron 220 s de `oOi3oJmfz4o` y 172 s de
+`cl_mQplBecI`; el primer audio llego en aproximadamente 3,9 s y 2,8 s. Sin PO,
+la rama SABR fallaba a los 60 s con HTTP 403. Esto verifica extraccion y
+decodificacion; falta comprobar sonido y estabilidad de voz en un canal real.
+
+`TrackStartEvent` ocurre antes de extraer audio. Magelina espera ademas progreso
+con voz conectada antes de anunciar "Ahora suena". Clasifica los errores de la
+fuente sin publicar URLs privadas; eventos viejos no avanzan otra vez la cola.
+La cola pendiente se conserva al perder la conexion, y el cliente intenta
+reconectarse al nodo. Los bloqueos de YouTube aun pueden afectar videos concretos.
 
 Fuentes: [Lavalink](https://lavalink.dev/),
-[youtube-source](https://github.com/lavalink-devs/youtube-source),
-[Shoukaku](https://github.com/shipgirlproject/Shoukaku),
-[yt-cipher](https://github.com/kikkia/yt-cipher).
+[youtube-source PR #229](https://github.com/lavalink-devs/youtube-source/pull/229),
+[yt-cipher](https://github.com/kikkia/yt-cipher),
+[webpo-generator](https://github.com/ashton045/webpo-generator).

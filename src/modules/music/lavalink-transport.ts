@@ -4,7 +4,7 @@ import { LoadType, type Player } from 'shoukaku';
 import type { MusicTrack } from '../../types/contracts.js';
 import type { MusicProvider } from './audius.js';
 import type { MusicTransport } from './transport.js';
-import { LavalinkYouTube, type LavalinkRuntime } from './lavalink.js';
+import { lavalinkFailure, LavalinkYouTube, type LavalinkRuntime } from './lavalink.js';
 import { workflowError } from '../workflow/rules.js';
 import { logRecord } from '../../observability/logging.js';
 
@@ -13,8 +13,9 @@ export class LavalinkMusicTransport implements MusicTransport {
   private guildId?: string;
   private level = 30;
   private playbackId?: string;
+  private startEventId?: string;
   private finished?: (error?: string) => void;
-  private starting?: { resolve: () => void; reject: (error: Error) => void };
+  private starting?: { resolve: () => void; reject: (error: Error) => void; error?: Error };
   private commands: Promise<unknown> = Promise.resolve();
   private readonly nodeLost = () => { if (this.player) this.disconnected(); };
   constructor(private readonly runtime: LavalinkRuntime, private readonly youtube: LavalinkYouTube,
@@ -30,12 +31,25 @@ export class LavalinkMusicTransport implements MusicTransport {
         const data = event as { track?: { userData?: { magelinaPlayback?: string } } };
         return Boolean(this.playbackId && data.track?.userData?.magelinaPlayback === this.playbackId);
       };
-      this.player.on('start', event => { if (matches(event)) this.starting?.resolve(); });
+      this.player.on('start', event => { if (matches(event)) this.startEventId = this.playbackId; });
+      this.player.on('update', event => {
+        // TrackStartEvent precedes extraction. Require actual progress on the
+        // connected voice player before announcing that the song is playing.
+        if (this.playbackId && this.startEventId === this.playbackId && event.state.connected && event.state.position > 0) this.starting?.resolve();
+      });
       this.player.on('end', event => {
         if (!matches(event) || event.reason === 'stopped' || event.reason === 'replaced') return;
         this.complete(event.reason === 'finished' ? undefined : 'Lavalink no pudo completar la cancion.');
       });
-      this.player.on('exception', event => { if (matches(event)) this.complete('Lavalink encontro un error al obtener el audio de esta cancion.'); });
+      this.player.on('exception', event => {
+        if (!matches(event)) return;
+        const reason = lavalinkFailure(`${event.exception.message} ${event.exception.cause}`);
+        const message = ['source-auth-required', 'source-forbidden', 'source-clients-failed'].includes(reason)
+          ? 'La fuente rechazo el acceso al audio. No se pudo iniciar o continuar esta cancion.'
+          : reason === 'source-rate-limited' ? 'La fuente limito las solicitudes. Espera antes de reintentar.'
+          : 'Lavalink no pudo obtener audio reproducible de esta cancion.';
+        this.complete(message, reason);
+      });
       this.player.on('stuck', event => { if (matches(event)) this.complete('La fuente de audio dejo de entregar datos.'); });
       this.player.on('closed', event => {
         logRecord('lavalink.voice.closed', { service: 'lavalink', guildId: guild.id, exitCode: event.code, outcome: 'failed' });
@@ -71,6 +85,7 @@ export class LavalinkMusicTransport implements MusicTransport {
     }
     const playbackId = randomUUID();
     this.playbackId = playbackId;
+    this.startEventId = undefined;
     let timer: ReturnType<typeof setTimeout>;
     const started = new Promise<void>((resolve, reject) => {
       this.starting = { resolve, reject };
@@ -81,7 +96,9 @@ export class LavalinkMusicTransport implements MusicTransport {
     try {
       await this.command(player => player.playTrack({ track: { encoded, userData: { magelinaPlayback: playbackId } }, volume: this.level, paused: false }));
       await started;
+      if (this.starting?.error) throw this.starting.error;
       this.finished = finished;
+      this.starting = undefined;
       logRecord('music.audio.playing', { service: 'lavalink', durationMs: Math.round(performance.now() - began) });
     } catch (error) {
       await this.stopTrack();
@@ -91,15 +108,19 @@ export class LavalinkMusicTransport implements MusicTransport {
       this.starting = undefined;
     }
   }
-  private complete(error?: string) {
+  private complete(error?: string, reason = error ? 'playback-error' : 'finished') {
+    logRecord('music.transport.finished', { service: 'lavalink', guildId: this.guildId, reason,
+      action: this.starting ? 'startup' : 'playback', positionMs: this.position(), outcome: error ? 'failed' : 'completed' });
     if (this.starting) {
-      this.starting.reject(workflowError(502, error ?? 'La pista termino antes de iniciar.'));
+      this.starting.error = workflowError(502, error ?? 'La pista termino antes de iniciar.');
+      this.playbackId = undefined;
+      this.startEventId = undefined;
+      this.starting.reject(this.starting.error);
       return;
     }
     const callback = this.finished;
     this.finished = undefined;
     this.playbackId = undefined;
-    logRecord('music.transport.finished', { service: 'lavalink', guildId: this.guildId, outcome: error ? 'failed' : 'completed' });
     callback?.(error);
   }
   pause() { return this.command(player => player.setPaused(true)); }
@@ -109,6 +130,7 @@ export class LavalinkMusicTransport implements MusicTransport {
   stopTrack() {
     this.finished = undefined;
     this.playbackId = undefined;
+    this.startEventId = undefined;
     this.starting?.reject(workflowError(409, 'La reproduccion fue cancelada.'));
     return this.command(player => player.stopTrack());
   }

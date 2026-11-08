@@ -130,10 +130,12 @@ export class MusicService {
         session.watchdog = setTimeout(() => finished('La pista excedio su tiempo de reproduccion y se avanzo la cola.'), (entry.track.durationSeconds + 45) * 1000);
         session.watchdog.unref();
         return;
-      } catch {
+      } catch (error) {
         this.announce(guildId, session, 'failed', [entry]);
         try { await session.transport?.stopTrack(); } catch { this.close(session, 'El motor de audio no responde. Reconecta para continuar.', true); return; }
-        session.state.error = 'Una pista no esta disponible y se retiro de la cola.'; session.state.current = null;
+        session.state.error = error instanceof Error && 'publicMessage' in error && typeof error.publicMessage === 'string'
+          ? error.publicMessage : 'Una pista no esta disponible y se retiro de la cola.';
+        session.state.current = null;
         if (session.transport && session.state.queue.length && !this.stopped) {
           session.state.status = 'buffering';
           session.watchdog = setTimeout(() => { void this.serial(guildId, async () => { await this.next(guildId, session); session.state.version++; }); }, 500);

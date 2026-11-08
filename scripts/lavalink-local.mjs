@@ -1,18 +1,18 @@
-import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, access, rename } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { parseEnv } from 'node:util';
 import { createRequire } from 'node:module';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const directory = resolve(root, '.tools/lavalink');
 const envFile = resolve(root, '.env.lavalink');
 const headers = { 'User-Agent': 'Magelina-local-Lavalink-setup' };
-const versions = { lavalink: '4.2.2', youtube: '1.18.2' };
+// Official upstream snapshot, pinned with its published SHA-256 for reproducibility.
+const versions = { lavalink: '4.2.2', youtube: '02f536d9ac05b4bb0f91dedc19f964f30fc18559' };
+const youtubeSha256 = '693087b71b4acc78fdc2110b9f4ba39ce0ef61aeaeb34c2cd71820239a8d36e8';
 const action = process.argv[2];
 const exists = path => access(path).then(() => true, () => false);
 
@@ -57,8 +57,13 @@ async function prepare() {
   await Promise.all([
     download(runtime.binary.package.link, archive, runtime.binary.package.checksum),
     releaseAsset('lavalink-devs/Lavalink', versions.lavalink, /^Lavalink\.jar$/, resolve(directory, 'Lavalink.jar')),
-    releaseAsset('lavalink-devs/youtube-source', versions.youtube, /^youtube-plugin-1\.18\.2\.jar$/, resolve(directory, `plugins/youtube-plugin-${versions.youtube}.jar`)),
+    download(`https://maven.lavalink.dev/snapshots/dev/lavalink/youtube/youtube-plugin/${versions.youtube}/youtube-plugin-${versions.youtube}.jar`, resolve(directory, 'plugins/youtube-plugin.jar'), youtubeSha256),
   ]);
+  const previousPlugin = resolve(directory, 'plugins/youtube-plugin-1.18.2.jar');
+  if (await exists(previousPlugin)) {
+    await mkdir(resolve(directory, 'plugin-backups'), { recursive: true });
+    await rename(previousPlugin, resolve(directory, 'plugin-backups/youtube-plugin-1.18.2.jar'));
+  }
   const runtimeRoot = resolve(directory, 'runtime');
   const java = resolve(runtimeRoot, `${runtime.release_name}-jre`, 'bin/java.exe');
   // Expand only into the fixed project-local runtime directory; leave system Java untouched.
@@ -85,8 +90,9 @@ plugins:
   youtube:
     enabled: true
     allowSearch: true
-    clients: [MUSIC, ANDROID_VR, TVHTML5_SIMPLY, MWEB, WEB, WEBEMBEDDED]
+    clients: [WEB, MWEB, ANDROID_VR, TVHTML5_SIMPLY, WEBEMBEDDED]
 ${env.CIPHER_TOKEN ? `    remoteCipher:\n      url: "http://127.0.0.1:8001"\n      password: "${env.CIPHER_TOKEN}"\n` : ''}
+${env.POT_TOKEN ? `    remotePot:\n      url: "http://127.0.0.1:8002"\n      pass: "${env.POT_TOKEN}"\n` : ''}
 logging:
   request:
     enabled: false
@@ -98,6 +104,10 @@ logging:
 `;
   await writeFile(resolve(directory, 'application.yml'), config, { mode: 0o600 });
   await writeFile(resolve(directory, 'runtime.json'), JSON.stringify({ java, versions, javaRelease: runtime.release_name }));
+  if (env.POT_TOKEN && await exists(resolve(directory, 'youtube-source-po/.git'))) {
+    await prepareProbe();
+    execFileSync(process.execPath, [resolve(root, 'scripts/build-youtube-po.mjs')], { cwd: root, windowsHide: true, stdio: 'inherit' });
+  }
   console.log(`Lavalink ${versions.lavalink}, YouTube ${versions.youtube} y Java 21 portable instalados y verificados. Solo escucha en 127.0.0.1:2333.`);
 }
 async function prepareCipher() {
@@ -132,6 +142,17 @@ async function startCipher() {
   child.once('error', () => { console.error('No se pudo iniciar el servicio local de firmas.'); process.exitCode = 1; });
   child.once('exit', code => { process.exitCode = code ?? 1; });
 }
+async function startPot() {
+  const env = await environment();
+  if (!env.POT_TOKEN) throw new Error('Prepara primero el generador PO.');
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: resolve(directory, 'webpo-generator'), windowsHide: true, stdio: 'inherit',
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '8002', API_TOKEN: env.POT_TOKEN, WORKERS: '1', CACHE_SIZE: '100', QUEUE_SIZE: '8', MAX_PENDING_REQUESTS: '16' },
+  });
+  process.once('SIGINT', () => child.kill()); process.once('SIGTERM', () => child.kill());
+  child.once('error', () => { console.error('No se pudo iniciar el generador PO local.'); process.exitCode = 1; });
+  child.once('exit', code => { process.exitCode = code ?? 1; });
+}
 async function start() {
   const runtime = JSON.parse(await readFile(resolve(directory, 'runtime.json'), 'utf8'));
   console.log('Iniciando Lavalink local; Ctrl+C detiene este proceso.');
@@ -141,11 +162,85 @@ async function start() {
   child.once('error', () => { console.error('No se pudo iniciar Java portable.'); process.exitCode = 1; });
   child.once('exit', code => { process.exitCode = code ?? 1; });
 }
+async function prepareProbe() {
+  const compiler = resolve(directory, 'ecj-3.40.0.jar');
+  const checksum = '5c26f6a20278196f8038a284d885c3796cd7d422';
+  if (!await exists(compiler) || createHash('sha1').update(await readFile(compiler)).digest('hex') !== checksum) {
+    const response = await fetch('https://repo.maven.apache.org/maven2/org/eclipse/jdt/ecj/3.40.0/ecj-3.40.0.jar', { signal: AbortSignal.timeout(60_000) });
+    if (!response.ok) throw new Error('No se pudo descargar el compilador oficial de Eclipse.');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (createHash('sha1').update(bytes).digest('hex') !== checksum) throw new Error('Checksum del compilador incorrecto.');
+    await writeFile(compiler, bytes);
+  }
+  const libs = resolve(directory, 'probe-libs'), classes = resolve(directory, 'probe-classes');
+  await mkdir(libs, { recursive: true }); await mkdir(classes, { recursive: true });
+  const quote = value => `'${value.replaceAll("'", "''")}'`;
+  execFileSync('powershell.exe', ['-NoProfile', '-Command', `$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$probeArchive=[System.IO.Compression.ZipFile]::OpenRead(${quote(resolve(directory, 'Lavalink.jar'))})
+try { foreach ($probeEntry in $probeArchive.Entries) { if ($probeEntry.FullName -match '^BOOT-INF/lib/[^/]+[.]jar$') { [System.IO.Compression.ZipFileExtensions]::ExtractToFile($probeEntry, (Join-Path ${quote(libs)} $probeEntry.Name), $true) } } } finally { $probeArchive.Dispose() }`], { windowsHide: true });
+  const runtime = JSON.parse(await readFile(resolve(directory, 'runtime.json'), 'utf8'));
+  // Java wildcard classpaths are expanded by the launcher, not by ECJ.
+  const { readdir } = await import('node:fs/promises');
+  const classpath = [...(await readdir(libs)).filter(name => name.endsWith('.jar')).map(name => resolve(libs, name)), resolve(directory, 'plugins/youtube-plugin.jar')].join(';');
+  return { runtime, compiler, classes, classpath };
+}
+async function preparePot() {
+  await prepareCipher();
+  for (const [repo, folder, revision] of [
+    ['ashton045/webpo-generator', 'webpo-generator', '682ac9fbfb64948a8b518551011138486c560207'],
+    ['ashton045/youtube-source', 'youtube-source-po', '1ddb648257d5b547aa1e2dfb8104edf6cb1089be'],
+  ]) {
+    const target = resolve(directory, folder);
+    if (!await exists(resolve(target, '.git'))) execFileSync('git', ['clone', '--no-checkout', `https://github.com/${repo}.git`, target], { windowsHide: true, stdio: 'ignore' });
+    execFileSync('git', ['fetch', '--depth', '1', 'origin', revision], { cwd: target, windowsHide: true, stdio: 'ignore' });
+    execFileSync('git', ['checkout', '--detach', revision], { cwd: target, windowsHide: true, stdio: 'ignore' });
+  }
+  execFileSync('powershell.exe', ['-NoProfile', '-Command', 'npm ci --omit=dev --no-audit --no-fund; exit $LASTEXITCODE'], { cwd: resolve(directory, 'webpo-generator'), windowsHide: true, stdio: 'inherit' });
+  const env = await environment();
+  if (!env.POT_TOKEN) await writeFile(envFile, `${await readFile(envFile, 'utf8')}POT_TOKEN=${randomBytes(32).toString('hex')}\n`, { mode: 0o600 });
+  await prepare();
+  console.log('Generador PO local y plugin experimental del PR #229 preparados con revisiones fijas.');
+}
+async function probeFrames() {
+  const input = process.argv[3], seconds = Number(process.argv[4] ?? 10);
+  if (!/^[\w-]{11}$/.test(input ?? '') || !Number.isInteger(seconds) || seconds < 1 || seconds > 240) throw new Error('Usa probe-frames VIDEO_ID SEGUNDOS (1 a 240).');
+  const { runtime, compiler, classes, classpath } = await prepareProbe();
+  execFileSync(runtime.java, ['-jar', compiler, '-21', '-cp', classpath, '-d', classes, resolve(root, 'scripts/probes/AudioProbe.java')], { windowsHide: true, stdio: 'pipe' });
+  const env = await environment();
+  const child = spawn(runtime.java, ['-Xmx256m', '-cp', `${classes};${classpath}`, 'AudioProbe', input, String(seconds)], {
+    windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, CIPHER_TOKEN: env.CIPHER_TOKEN, POT_TOKEN: env.POT_TOKEN },
+  });
+  let pending = '', ok = false;
+  child.stdout.on('data', bytes => {
+    pending += bytes.toString();
+    const lines = pending.split(/\r?\n/); pending = lines.pop();
+    for (const line of lines) if (line.startsWith('MAGELINA_PROBE:')) {
+      const result = JSON.parse(line.slice('MAGELINA_PROBE:'.length));
+      console.log(JSON.stringify(result)); if (result.status === 'ok') ok = true;
+    }
+  });
+  const timeout = setTimeout(() => child.kill(), 130_000);
+  try { await new Promise((resolve, reject) => { child.once('exit', resolve); child.once('error', reject); }); }
+  finally { clearTimeout(timeout); }
+  if (!ok) process.exitCode = 1;
+}
 try {
+  if (['prepare', 'prepare-cipher', 'prepare-pot'].includes(action)) {
+    const owner = Number(await readFile(resolve(root, '.cache/host-pc.lock'), 'utf8').catch(() => '0'));
+    if (Number.isSafeInteger(owner) && owner > 0) {
+      let running = true;
+      try { process.kill(owner, 0); } catch (error) { if (error.code === 'ESRCH') running = false; }
+      if (running) throw new Error('Deten primero el host con npm run host:stop antes de reemplazar el plugin.');
+    }
+  }
   if (action === 'prepare') await prepare();
   else if (action === 'prepare-cipher') await prepareCipher();
+  else if (action === 'prepare-pot') await preparePot();
   else if (action === 'start-cipher') await startCipher();
+  else if (action === 'start-pot') await startPot();
   else if (action === 'start') await start();
+  else if (action === 'probe-frames' || action === 'probe-audio') await probeFrames();
   else if (action === 'check') {
     const response = await request('/v4/info');
     if (!response.ok) throw new Error(`Lavalink no esta listo (HTTP ${response.status}).`);
@@ -189,27 +284,7 @@ try {
     });
     try { await closed; console.log(JSON.stringify({ events, discordConnected: false })); }
     finally { clearTimeout(timer); socket.terminate(); }
-  } else if (action === 'probe-audio') {
-    const input = process.argv[3], seconds = Number(process.argv[4] ?? 10);
-    if (!/^[\w-]{11}$/.test(input ?? '') || !Number.isInteger(seconds) || seconds < 1 || seconds > 240) throw new Error('Usa probe-audio VIDEO_ID SEGUNDOS (1 a 240).');
-    const began = performance.now();
-    const response = await request(`/youtube/stream/${input}`, (seconds + 60) * 1000);
-    if (!response.ok || !response.body) throw new Error(`El nodo no pudo extraer audio de YouTube (HTTP ${response.status}).`);
-    const firstByteMs = Math.round(performance.now() - began);
-    const ffmpeg = createRequire(import.meta.url)('ffmpeg-static');
-    const child = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-re', '-i', 'pipe:0', '-t', String(seconds), '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
-    let bytes = 0;
-    child.stdout.on('data', chunk => { bytes += chunk.length; });
-    const audio = Readable.fromWeb(response.body);
-    const done = new Promise((resolve, reject) => { child.once('close', resolve); child.once('error', reject); });
-    const piped = pipeline(audio, child.stdin).catch(() => {});
-    const timer = setTimeout(() => { audio.destroy(); child.kill(); }, (seconds + 30) * 1000);
-    try {
-      const code = await done;
-      if (code !== 0 || bytes < seconds * 192_000 * 0.98) throw new Error('No se confirmo la decodificacion continua del audio.');
-      console.log(JSON.stringify({ result: 'ok', seconds, firstByteMs, decodedBytes: bytes, realtime: true, discordConnected: false }));
-    } finally { clearTimeout(timer); audio.destroy(); child.kill(); await piped; }
-  } else throw new Error('Usa prepare, start, check, probe VIDEO_ID o probe-audio VIDEO_ID SEGUNDOS.');
+  } else throw new Error('Usa prepare, prepare-pot, start, check, probe VIDEO_ID o probe-frames VIDEO_ID SEGUNDOS.');
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
