@@ -27,10 +27,13 @@ test('API logs include sanitized JSON request and response bodies without changi
   await new Promise<void>(resolve => server.once('listening', resolve));
   t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects`;
-  const send = () => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Magelina', password: 'private-request' }) });
+  const send = () => fetch(url + '?search=Magelina&token=private-query', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Screen': '/servidores/123/proyectos', 'X-Client-Request-ID': '162b983b-f5c7-4296-bf45-6afef247a066' }, body: JSON.stringify({ name: 'Magelina', password: 'private-request' }) });
   const response = await send();
   assert.deepEqual(await response.json(), { name: 'Magelina', token: 'private-response', createdAt: '2026-10-30T00:00:00.000Z' });
   const end = JSON.parse(records.at(-1)!);
+  assert.equal(end.clientRequestId, '162b983b-f5c7-4296-bf45-6afef247a066');
+  assert.equal(end.source.screen.path, '/servidores/123/proyectos');
+  assert.deepEqual(end.requestTarget, { path: '/api/projects', query: { search: 'Magelina', token: '[Redacted]' } });
   assert.deepEqual(end.requestBody, { name: 'Magelina', password: '[Redacted]' });
   assert.deepEqual(end.responseBody, { name: 'Magelina', token: '[Redacted]', createdAt: '2026-10-30T00:00:00.000Z' });
   assert.ok(!records.join('').includes('private-'));

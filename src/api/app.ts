@@ -19,7 +19,7 @@ export function createApp({ config, bot, isStopping }: AppDependencies) {
   app.disable('x-powered-by');
   app.use(requestLogging);
   if (config.trustProxy) app.set('trust proxy', 1);
-  app.use(cors({ origin: config.dashboardOrigin, credentials: true }));
+  app.use(cors({ origin: config.dashboardOrigin, credentials: true, exposedHeaders: ['X-Request-ID'] }));
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/', (_req, res) => {

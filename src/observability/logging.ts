@@ -49,6 +49,23 @@ export function logRecord(event: string, fields: Fields = {}) {
 }
 export function traceOperation<T>(operation: () => T): T { return context.run({ requestId: randomUUID() }, operation); }
 interface Fields { requestBody?: unknown; responseBody?: unknown }
+interface Fields { clientRequestId?: string; source?: unknown; requestTarget?: unknown; query?: unknown; params?: unknown; userId?: string }
+
+/** Preserve diagnostic paths while removing credential-bearing path segments and queries. */
+export function diagnosticUrl(value: string): unknown {
+  try {
+    const url = new URL(value, 'https://local.invalid');
+    const parts = url.pathname.split('/');
+    const secret = /^(?:webhooks|interactions|token|reset-password|verify-email)$/i;
+    for (let i = 0; i < parts.length; i++) {
+      if (secret.test(parts[i])) {
+        const offset = /^(webhooks|interactions)$/i.test(parts[i]) ? 2 : 1;
+        if (parts[i + offset]) parts[i + offset] = '[Redacted]';
+      }
+    }
+    return safeBody({ path: parts.join('/'), query: Object.fromEntries(url.searchParams) });
+  } catch { return '[Invalid URL]'; }
+}
 
 // Bound both traversal and output, and remove credentials before serialization.
 export function safeBody(value: unknown): unknown {
@@ -80,7 +97,19 @@ const elapsed = (start: number) => Math.round((performance.now() - start) * 10) 
 export const requestLogging: RequestHandler = (req, res, next) => {
   traceOperation(() => {
     const start = performance.now(), requestId = context.getStore()!.requestId;
-    const fields = { requestId, method: req.method, route: safeRoute(req.originalUrl) };
+    const clientRequestId = req.get('X-Client-Request-ID');
+    const fields = { requestId, method: req.method, route: safeRoute(req.originalUrl),
+      requestTarget: diagnosticUrl(req.originalUrl),
+      ...(clientRequestId && /^[a-f\d-]{36}$/i.test(clientRequestId) ? { clientRequestId } : {}),
+      source: {
+        screen: req.get('X-Client-Screen') ? diagnosticUrl(req.get('X-Client-Screen')!) : undefined,
+        referer: req.get('referer') ? diagnosticUrl(req.get('referer')!) : undefined,
+        origin: req.get('origin')?.slice(0, 256),
+        userAgent: req.get('user-agent')?.slice(0, 256),
+        ip: req.ip, // Express only trusts proxy addresses when configured in createApp.
+        reportedByClient: true,
+      },
+    };
     const includeBodies = process.env.REQUEST_LOGGING !== 'false' && process.env.REQUEST_LOG_BODIES !== 'false'
       && !/^\/api\/auth(?:\/|$)/.test(req.path);
     let responseBody: unknown;
@@ -98,6 +127,7 @@ export const requestLogging: RequestHandler = (req, res, next) => {
     logRecord('http.in.start', fields);
     let finished = false;
     res.once('finish', () => { finished = true; logRecord('http.in.end', { ...fields, status: res.statusCode, durationMs: elapsed(start), outcome: requestOutcome(res.statusCode),
+      userId: req.session?.user?.id, params: safeBody(req.params),
       ...(includeBodies ? { requestBody: safeBody(req.body), responseBody } : {}) }); });
     res.once('close', () => { if (!finished) logRecord('http.in.end', { ...fields, durationMs: elapsed(start), outcome: 'aborted' }); });
     next();
